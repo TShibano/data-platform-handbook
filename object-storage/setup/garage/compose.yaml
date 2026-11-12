@@ -1,0 +1,31 @@
+# Garage を単一ノードで起動する
+# 使い方: docker compose up -d / podman compose up -d
+#
+# v2.3.0 以降の --single-node / --default-bucket を使い，起動時にレイアウト設定・
+# 既定キー作成・既定バケット作成を自動で行う（run.sh は同じ処理を CLI で明示的に行う）．
+services:
+  garage:
+    image: ${GARAGE_IMAGE:-docker.io/dxflrs/garage:v2.5.0}
+    container_name: handbook-garage
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      # キー ID は8文字以上の英数字と -_.，シークレットは16文字以上の印字可能 ASCII
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_DEFAULT_ACCESS_KEY:-GKhandbook0000000000000000}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_DEFAULT_SECRET_KEY:-handbook-garage-secret-change-me}
+      GARAGE_DEFAULT_BUCKET: ${GARAGE_DEFAULT_BUCKET:-handbook}
+    ports:
+      - "${GARAGE_S3_PORT:-3900}:3900"       # S3 API
+      - "${GARAGE_WEB_PORT:-3902}:3902"      # 静的 Web サイト公開（s3_web）
+      - "${GARAGE_ADMIN_PORT:-3903}:3903"    # Admin API（Web UI ではない）
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - meta:/var/lib/garage/meta
+      - data:/var/lib/garage/data
+    restart: unless-stopped
+
+volumes:
+  # run.sh と同じボリュームを使うため名前を固定する
+  meta:
+    name: handbook-garage-meta
+  data:
+    name: handbook-garage-data

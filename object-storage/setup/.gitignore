@@ -1,0 +1,4 @@
+# AIStor のライセンスファイル（個人に紐づくためコミットしない）
+aistor/minio.license
+# Garage の run.sh が書き出す S3 認証情報
+garage/.garage_env

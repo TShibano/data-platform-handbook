@@ -1,0 +1,29 @@
+# SeaweedFS を weed mini（master / volume / filer / S3 / 管理UI を1プロセスに同梱）で起動する
+# 使い方: docker compose up -d / podman compose up -d
+#
+# S3 認証は s3.json で定義する（認証情報が1件も無いと全操作が匿名で許可されるため）．
+# 管理UIはパスワード未設定だとコンテナ内の 127.0.0.1 にしかバインドされずホストから開けないので，
+# -admin.password を指定してパスワード認証付きで公開する．
+services:
+  seaweedfs:
+    image: ${SEAWEEDFS_IMAGE:-docker.io/chrislusf/seaweedfs:4.53}
+    container_name: handbook-seaweedfs
+    command:
+      - mini
+      - -dir=/data
+      - -s3.config=/config/s3.json
+      - -admin.password=${SEAWEEDFS_ADMIN_PASSWORD:-admin}
+    ports:
+      - "${SEAWEEDFS_S3_PORT:-8333}:8333"       # S3 API
+      - "${SEAWEEDFS_ADMIN_PORT:-12535}:12535"  # 管理UI（ユーザー名 admin）
+      - "${SEAWEEDFS_MASTER_PORT:-9333}:9333"   # master UI
+      - "${SEAWEEDFS_FILER_PORT:-8888}:8888"    # filer UI
+    volumes:
+      - ./s3.json:/config/s3.json:ro
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  data:
+    # run.sh と同じボリュームを使うため名前を固定する
+    name: handbook-seaweedfs-data

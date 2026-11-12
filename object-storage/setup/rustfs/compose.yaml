@@ -1,0 +1,28 @@
+# RustFS を単一ノード・単一ドライブで起動する
+# 使い方: docker compose up -d / podman compose up -d
+#
+# rustfsadmin は公開済みの既知の値なので，localhost 以外へ公開する場合は必ず
+# RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY を上書きする（例: openssl rand -base64 24）．
+services:
+  rustfs:
+    image: ${RUSTFS_IMAGE:-docker.io/rustfs/rustfs:1.0.5}
+    container_name: handbook-rustfs
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "${RUSTFS_S3_PORT:-9020}:9000"      # S3 API
+      - "${RUSTFS_CONSOLE_PORT:-9021}:9001" # Web コンソール
+    volumes:
+      # コンテナは UID 10001 で動くため，バインドマウントではなく名前付きボリュームを使う
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  data:
+    # run.sh と同じボリュームを使うため名前を固定する
+    name: handbook-rustfs-data
