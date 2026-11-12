@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "handbook_admin",
+      "credentials": [
+        {
+          "accessKey": "handbook-access-key",
+          "secretKey": "handbook-secret-key-change-me"
+        }
+      ],
+      "actions": ["Admin", "Read", "List", "Tagging", "Write"]
+    }
+  ]
+}

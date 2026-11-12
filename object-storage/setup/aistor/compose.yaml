@@ -1,0 +1,28 @@
+# MinIO AIStor（商用版）を単一ノード・単一ドライブで起動する
+# 使い方: docker compose up -d / podman compose up -d
+#
+# 事前に AIStor のライセンスファイル（Free tier 可）を取得し，このディレクトリに minio.license として置く．
+# 別の場所に置く場合は AISTOR_LICENSE_FILE で指定する．
+# ファイルが無いと docker はディレクトリを自動作成してしまい，podman はエラーになる．
+services:
+  aistor:
+    image: ${AISTOR_IMAGE:-quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z}
+    container_name: handbook-aistor
+    # 公式手順どおり minio サブコマンドから渡し，ライセンスは --license で指定する
+    command: ["minio", "server", "/mnt/data", "--license", "/minio.license"]
+    environment:
+      # 公式手順の既定値は minioadmin:minioadmin．変数名は MinIO 由来（AIStor 文書での明記は要確認）
+      MINIO_ROOT_USER: ${AISTOR_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${AISTOR_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${AISTOR_S3_PORT:-9010}:9000"      # S3 API
+      - "${AISTOR_CONSOLE_PORT:-9011}:9001" # Web コンソール
+    volumes:
+      - data:/mnt/data
+      - ${AISTOR_LICENSE_FILE:-./minio.license}:/minio.license:ro
+    restart: unless-stopped
+
+volumes:
+  data:
+    # run.sh と同じボリュームを使うため名前を固定する
+    name: handbook-aistor-data

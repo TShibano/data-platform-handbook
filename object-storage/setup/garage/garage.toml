@@ -1,0 +1,32 @@
+# Garage v2 の単一ノード用設定
+# 公式 Quick Start の設定をもとに，データの永続化先を /var/lib/garage に変更している．
+# バインド先は公式例の [::] ではなく，Podman (macOS) で動作実績のある 0.0.0.0 にしている．
+# rpc_secret と admin_token はローカル検証用の固定値．共有環境では必ず再生成する
+#   rpc_secret:  openssl rand -hex 32
+#   admin_token: openssl rand -base64 32
+# 環境変数 GARAGE_RPC_SECRET / GARAGE_ADMIN_TOKEN でも上書きできる．
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir     = "/var/lib/garage/data"
+db_engine    = "sqlite"
+
+# 単一ノードなので複製数は1（--single-node モードの必須条件でもある）
+replication_factor = 1
+
+rpc_bind_addr   = "0.0.0.0:3901"
+rpc_public_addr = "127.0.0.1:3901"
+rpc_secret      = "00ba16efd7193aa76afe0514a5e67ecfb902937a9f2b390c6c6da821385307cb"
+
+[s3_api]
+s3_region     = "garage"
+api_bind_addr = "0.0.0.0:3900"
+root_domain   = ".s3.garage.localhost"
+
+[s3_web]
+bind_addr   = "0.0.0.0:3902"
+root_domain = ".web.garage.localhost"
+index       = "index.html"
+
+[admin]
+api_bind_addr = "0.0.0.0:3903"
+admin_token   = "handbook-admin-token-change-me"

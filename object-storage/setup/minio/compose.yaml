@@ -1,0 +1,25 @@
+# MinIO（コミュニティ版）を単一ノード・単一ドライブで起動する
+# 使い方: docker compose up -d / podman compose up -d
+#
+# 公式イメージ（quay.io/minio/minio, docker.io/minio/minio）は2026-11-12時点で匿名取得できないため，
+# AGPLv3 のコミュニティフォーク pgsty/minio の最終 MinIO 名義リリースを既定にしている．
+# 手元にキャッシュ済みの公式イメージを使う場合は MINIO_IMAGE で上書きする．
+services:
+  minio:
+    image: ${MINIO_IMAGE:-docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z}
+    container_name: handbook-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_S3_PORT:-9000}:9000"      # S3 API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001" # Web コンソール
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  data:
+    # run.sh と同じボリュームを使うため名前を固定する
+    name: handbook-minio-data
