@@ -1,12 +1,18 @@
 # MinIO（コミュニティ版）を単一ノード・単一ドライブで起動する
-# 使い方: docker compose up -d / podman compose up -d
+# 使い方: docker compose up -d --build / podman compose up -d --build
 #
-# 公式イメージ（quay.io/minio/minio, docker.io/minio/minio）は2026-11-12時点で匿名取得できないため，
-# AGPLv3 のコミュニティフォーク pgsty/minio の最終 MinIO 名義リリースを既定にしている．
-# 手元にキャッシュ済みの公式イメージを使う場合は MINIO_IMAGE で上書きする．
+# 公式のビルド済みイメージは配布終了しているため，同じディレクトリの Dockerfile で
+# 公式ソース（github.com/minio/minio）の固定タグをビルドしてから起動する．
+# バージョンは MINIO_VERSION で変更できる（RELEASE.* 形式のタグ名）．
 services:
   minio:
-    image: ${MINIO_IMAGE:-docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MINIO_VERSION: ${MINIO_VERSION:-RELEASE.2025-10-15T17-29-55Z}
+    # run.sh と同じタグにして，どちらで起動してもビルド済みイメージを共有する
+    image: localhost/handbook-minio:${MINIO_VERSION:-RELEASE.2025-10-15T17-29-55Z}
     container_name: handbook-minio
     command: ["server", "/data", "--console-address", ":9001"]
     environment:

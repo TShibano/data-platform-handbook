@@ -4,14 +4,14 @@ S3互換オブジェクトストレージ5製品（MinIO / AIStor / RustFS / Gar
 各製品とも `compose.yaml`（`docker compose` / `podman compose` 両対応）と `run.sh`（`docker run` 相当のシェルスクリプト）の2通りで起動できる．
 
 - 情報の確認日: 2026-11-12（各製品の出典は各ディレクトリの README に記載）
-- 動作実績: `../benchmark/scripts/` のベンチマーク用スクリプト（Podman, macOS, Apple Silicon）をもとにしている．ただし本ディレクトリの設定そのものは実起動での検証をしていない
+- 動作実績: `../benchmark/scripts/` のベンチマーク用スクリプト（Podman, macOS, Apple Silicon）をもとにしている．ただし本ディレクトリの設定そのものは，MinIO（ソースビルド方式，2026-11-13 に Podman で実ビルド・起動・PUT/GET を確認）を除き実起動での検証をしていない
 - ホストポートは製品ごとにずらしてあり，5製品を同時に起動できる
 
 ## 製品比較
 
 | 製品 | ライセンス | イメージ:タグ | S3 API | Web UI | 既定の認証情報 | 単一ノード起動 |
 |---|---|---|---|---|---|---|
-| [MinIO](minio/) | AGPL-3.0 | `docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z`（コミュニティフォーク） | 9000 | あり（9001） | `minioadmin` / `minioadmin` | 可 |
+| [MinIO](minio/) | AGPL-3.0 | `localhost/handbook-minio:RELEASE.2025-10-15T17-29-55Z`（公式ソース `minio/minio` の最終タグをローカルでビルド） | 9000 | あり（9001） | `minioadmin` / `minioadmin` | 可 |
 | [AIStor](aistor/) | 商用（AIStor Free 契約 / Enterprise） | `quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z` | 9010 | あり（9011） | `minioadmin` / `minioadmin` | 可（Free は単一ノードのみ．ライセンスファイルが必要） |
 | [RustFS](rustfs/) | Apache-2.0 | `docker.io/rustfs/rustfs:1.0.5` | 9020 | あり（9021） | `rustfsadmin` / `rustfsadmin`（本ディレクトリの既定値．公式は変更を強く推奨） | 可 |
 | [Garage](garage/) | AGPL-3.0 | `docker.io/dxflrs/garage:v2.5.0` | 3900 | なし（Admin API 3903 のみ） | run.sh: 起動時に生成し `.garage_env` へ出力 / compose: 環境変数で指定 | 可（`replication_factor = 1`） |
@@ -98,7 +98,7 @@ mc ls local-minio/handbook
 mc cat local-minio/handbook/hello.txt                 # GET
 ```
 
-- `minio/mc` リポジトリも GitHub 上でアーカイブ済み（2026-11-12 確認）で，ホスト側への `mc` の入手方法（Homebrew 等で現在も入手できるか）は要確認．`pgsty/minio` イメージには `mcli`（`mc` 互換エイリアスあり）が同梱されているので，`podman exec handbook-minio mcli ...` でも試せる
+- `minio/mc` リポジトリも GitHub 上でアーカイブ済み（2026-11-12 確認）で，ホスト側への `mc` の入手方法（Homebrew 等で現在も入手できるか）は要確認．MinIO はソースからビルドしたイメージ（`mc` は同梱しない）を使うので，ホスト側の `mc` か AWS CLI（`aws --endpoint-url http://localhost:9000 s3 ...`）を使う
 - Garage では `mc alias set` の後，リージョンを `garage` にする必要がある場合がある（要確認）
 
 ## ディレクトリ構成
