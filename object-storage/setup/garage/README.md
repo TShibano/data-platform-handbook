@@ -66,9 +66,45 @@ run.sh で作ったキーにはバケット作成権限が無い．追加でバ�
 - リージョン: `garage`（`garage.toml` の `s3_region`．クライアント側も合わせる）
 - 認証情報: compose は上表の既定キー，run.sh は `.garage_env`
 - Admin API: `http://localhost:3903`（`.env` の `GARAGE_ADMIN_TOKEN` をベアラートークンにする．例: `curl -H "Authorization: Bearer $GARAGE_ADMIN_TOKEN" http://localhost:3903/v2/GetClusterStatus`）
-- 静的 Web サイト公開: `http://<bucket>.web.garage.localhost:3902`（バケット側で website 設定が必要）
+- 静的 Web サイト公開: `http://<bucket>.web.garage.localhost:3902`（バケット側で website 設定が必要．次節参照）
 - Web UI: 公式には無い．サードパーティ製の Web UI は存在するが，本手順では扱わない
 - CLI: `podman exec handbook-garage /garage <サブコマンド>`（イメージにシェルが無いため `/garage` を直接実行する）
+
+### ポート 3902 について（Web UI ではない）
+
+`http://localhost:3902` をブラウザで開いても `404 Not Found` になるが，これは正常な動作である．3902 は MinIO のコンソールのような管理画面ではなく，バケットの中身を静的 Web サイトとして配信する `s3_web` エンドポイントである．
+
+- 配信するバケットはリクエストの `Host` ヘッダで決まる．`garage.toml` の `[s3_web] root_domain = ".web.garage.localhost"` により，`<bucket>.web.garage.localhost` がバケット `<bucket>` に対応する
+- `Host: localhost:3902` ではバケットが特定できないため 404 になる
+- website 公開を許可していないバケットも 404 になる
+
+起動直後の各ポートの応答（2026-11-13 確認）:
+
+| ポート | 用途 | `curl http://localhost:<port>/` の応答 | 意味 |
+|---|---|---|---|
+| 3900 | S3 API | 403 | 署名なしリクエストなので正常 |
+| 3902 | 静的 Web 公開 | 404 | バケット未特定なので正常 |
+| 3903 | Admin API | `/health` が 200 | 正常 |
+
+3902 でバケットの中身を見る手順:
+
+```bash
+# バケット handbook の website 公開を許可する
+podman exec handbook-garage /garage bucket website --allow handbook
+
+# index.html を置く（.garage_env の認証情報を使う例）
+source .garage_env
+echo '<h1>hello garage</h1>' > /tmp/index.html
+aws --endpoint-url http://localhost:3900 --region garage s3 cp /tmp/index.html s3://handbook/index.html
+
+# Host ヘッダでバケットを指定してアクセスする
+curl -H 'Host: handbook.web.garage.localhost' http://localhost:3902/
+```
+
+- ブラウザでは `http://handbook.web.garage.localhost:3902/` で開ける（`*.localhost` は通常 127.0.0.1 に解決される．解決されない環境では `/etc/hosts` に追記する）
+- `index.html` が無いパスは 404 になる．インデックス名は `garage.toml` の `[s3_web] index` で変えられる
+- 公開をやめる場合は `podman exec handbook-garage /garage bucket website --deny handbook`
+- 画面でバケットやキーを操作したい場合は，Admin API（3903）に接続するサードパーティ製 Web UI（例: garage-webui）を別コンテナで立てる必要がある（本手順では扱わない）
 
 ## 設定ファイル
 

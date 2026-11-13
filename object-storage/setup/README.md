@@ -24,7 +24,7 @@ S3互換オブジェクトストレージ5製品（MinIO / AIStor / RustFS / Gar
 | MinIO | 9000（S3），9001（コンソール） |
 | AIStor | 9010（S3），9011（コンソール） |
 | RustFS | 9020（S3），9021（コンソール） |
-| Garage | 3900（S3），3902（静的 Web 公開），3903（Admin API） |
+| Garage | 3900（S3），3902（静的 Web 公開．Web UI ではなく `http://localhost:3902` は 404 になる．[garage/README.md](garage/README.md#ポート-3902-についてweb-ui-ではない)），3903（Admin API） |
 | SeaweedFS | 8333（S3），12535（管理UI），9333（master），8888（filer） |
 
 いずれも各ディレクトリの `.env` で変更できる（[設定方法（.env）](#設定方法env)，変数名は各ディレクトリの `.env.example` を参照）．
