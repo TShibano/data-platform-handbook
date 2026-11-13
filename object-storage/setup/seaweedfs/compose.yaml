@@ -19,7 +19,7 @@ services:
       - "${SEAWEEDFS_MASTER_PORT:-9333}:9333"   # master UI
       - "${SEAWEEDFS_FILER_PORT:-8888}:8888"    # filer UI
     volumes:
-      - ./s3.json:/config/s3.json:ro
+      - ${SEAWEEDFS_S3_CONFIG:-./s3.json}:/config/s3.json:ro
       - data:/data
     restart: unless-stopped
 

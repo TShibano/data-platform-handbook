@@ -11,6 +11,17 @@
 
 compose と run.sh で初期化の方法が異なる．
 
+設定は `.env` で与える（[../README.md の「設定方法（.env）」](../README.md#設定方法env)）．`.env` が無ければ既定値で起動する．
+
+```bash
+cp .env.example .env        # 必要な行だけ編集する
+./run.sh config             # 実際に使われる値を確認する
+```
+
+設定できる変数と既定値は [.env.example](.env.example) を参照（共通: イメージ，ポート / run.sh のみ: 容量，キー名，バケット名 / compose のみ: 既定キー，既定バケット）．
+
+`.env` は起動設定の**入力**で，run.sh が書き出す `.garage_env`（生成された S3 認証情報の**出力**）とは別物．`.env` に `AWS_ACCESS_KEY_ID` 等を書いても Garage のキーにはならない．
+
 ### compose（自動初期化）
 
 v2.3.0 以降の `garage server --single-node --default-bucket` を使い，起動時にレイアウト設定・既定キー・既定バケットを自動作成する．
@@ -19,13 +30,7 @@ v2.3.0 以降の `garage server --single-node --default-bucket` を使い，起�
 podman compose up -d        # または docker compose up -d
 ```
 
-| 変数 | 既定値 |
-|---|---|
-| `GARAGE_IMAGE` | `docker.io/dxflrs/garage:v2.5.0` |
-| `GARAGE_DEFAULT_ACCESS_KEY` | `GKhandbook0000000000000000` |
-| `GARAGE_DEFAULT_SECRET_KEY` | `handbook-garage-secret-change-me` |
-| `GARAGE_DEFAULT_BUCKET` | `handbook` |
-| `GARAGE_S3_PORT` / `GARAGE_WEB_PORT` / `GARAGE_ADMIN_PORT` | `3900` / `3902` / `3903` |
+既定キーは `.env` の `GARAGE_DEFAULT_ACCESS_KEY` / `GARAGE_DEFAULT_SECRET_KEY`（既定値は `GKhandbook0000000000000000` / `handbook-garage-secret-change-me`），既定バケットは `GARAGE_DEFAULT_BUCKET`（既定値 `handbook`）で指定する．
 
 - キー ID は8文字以上の英数字と `-_.`，シークレットは16文字以上の印字可能 ASCII である必要がある（v2.5.0 のソースで確認）
 - 既定キーにはバケット作成権限が付く
@@ -35,8 +40,8 @@ podman compose up -d        # または docker compose up -d
 `/garage server` で起動した後，CLI でクラスタを初期化する．処理は冪等で，再実行しても既存の設定は壊さない．
 
 ```bash
-./run.sh start              # docker を使う場合: CONTAINER_RUNTIME=docker ./run.sh start
-source .garage_env          # AWS_ACCESS_KEY_ID 等が設定される
+./run.sh start              # docker を使う場合は .env に CONTAINER_RUNTIME=docker
+source .garage_env          # AWS_ACCESS_KEY_ID 等が設定される（.env とは別の，run.sh の出力ファイル）
 ```
 
 `start` が行う処理:
@@ -51,11 +56,7 @@ source .garage_env          # AWS_ACCESS_KEY_ID 等が設定される
 3. バケット `handbook` が無ければ作成し，`garage bucket allow --read --write --owner handbook --key handbook-key` で権限を付与する
 4. 認証情報を `.garage_env` に書き出す（パーミッション 600）
 
-| 変数 | 既定値 |
-|---|---|
-| `GARAGE_CAPACITY` | `10G`（レイアウトに登録する容量．実際の上限ではなくデータ配置の重み） |
-| `GARAGE_KEY_NAME` | `handbook-key` |
-| `GARAGE_BUCKET` | `handbook` |
+容量（`GARAGE_CAPACITY`，既定 `10G`．実際の上限ではなくデータ配置の重み），キー名（`GARAGE_KEY_NAME`，既定 `handbook-key`），バケット名（`GARAGE_BUCKET`，既定 `handbook`）は `.env` で変更できる．
 
 run.sh で作ったキーにはバケット作成権限が無い．追加でバケットを作る場合は `podman exec handbook-garage /garage bucket create <name>` を使うか，`garage key allow --create-bucket handbook-key` で権限を付ける．
 

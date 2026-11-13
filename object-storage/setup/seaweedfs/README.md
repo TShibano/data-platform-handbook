@@ -11,23 +11,22 @@
 
 ## 起動
 
+設定は `.env` で与える（[../README.md の「設定方法（.env）」](../README.md#設定方法env)）．`.env` が無ければ既定値で起動する．
+
+```bash
+cp .env.example .env        # 必要な行だけ編集する
+./run.sh config             # 実際に使われる値を確認する
+```
+
 ```bash
 # compose
 podman compose up -d        # または docker compose up -d
 
 # スクリプト
-./run.sh start              # docker を使う場合: CONTAINER_RUNTIME=docker ./run.sh start
+./run.sh start              # docker を使う場合は .env に CONTAINER_RUNTIME=docker
 ```
 
-| 変数 | 既定値 |
-|---|---|
-| `SEAWEEDFS_IMAGE` | `docker.io/chrislusf/seaweedfs:4.53` |
-| `SEAWEEDFS_S3_PORT` | `8333` |
-| `SEAWEEDFS_ADMIN_PORT` | `12535` |
-| `SEAWEEDFS_MASTER_PORT` | `9333` |
-| `SEAWEEDFS_FILER_PORT` | `8888` |
-| `SEAWEEDFS_ADMIN_PASSWORD` | `admin` |
-| `SEAWEEDFS_S3_CONFIG`（run.sh のみ） | `./s3.json` |
+設定できる変数（イメージ，ポート，管理UIのパスワード，`s3.json` のパス）と既定値は [.env.example](.env.example) を参照．`SEAWEEDFS_S3_CONFIG` は run.sh / compose 共通で，相対パスはこのディレクトリ基準．
 
 コンテナ内では `weed mini -dir=/data -s3.config=/config/s3.json -admin.password=<パスワード>` を実行する．
 

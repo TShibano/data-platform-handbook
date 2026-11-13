@@ -2,3 +2,7 @@
 aistor/minio.license
 # Garage の run.sh が書き出す S3 認証情報
 garage/.garage_env
+# 各製品の起動設定（.env.example をコピーして各自が作る．認証情報を含み得るためコミットしない）
+*/.env
+*/.env.*
+!*/.env.example

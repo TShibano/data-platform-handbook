@@ -1,21 +1,40 @@
 #!/usr/bin/env bash
 # Garage を単一ノードで起動し，レイアウト設定・キー作成・バケット作成まで行う
-# 使い方: ./run.sh {start|stop|status|logs|purge}
-#   CONTAINER_RUNTIME=docker ./run.sh start のようにランタイムを切り替えられる（既定は podman）
-#   start 完了後，このディレクトリの .garage_env に S3 認証情報を書き出す（source して使う）
+# 使い方: ./run.sh {start|stop|status|logs|purge|config}
+#   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
+#   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
+#   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
+#   start 完了後，このディレクトリの .garage_env に S3 認証情報を書き出す（source して使う）．
+#   .garage_env は run.sh の出力で，入力の設定ファイル .env とは別物
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUNTIME="${CONTAINER_RUNTIME:-podman}"
+. "$SCRIPT_DIR/../lib/env.sh"
+env_load "$SCRIPT_DIR"
+
+# 既定値は .env.example と compose.yaml に揃える
+env_var CONTAINER_RUNTIME podman
+env_var GARAGE_IMAGE docker.io/dxflrs/garage:v2.5.0
+env_var GARAGE_S3_PORT 3900
+env_var GARAGE_WEB_PORT 3902
+env_var GARAGE_ADMIN_PORT 3903
+env_var GARAGE_CAPACITY 10G
+env_var GARAGE_KEY_NAME handbook-key
+env_var GARAGE_BUCKET handbook
+# compose の --single-node / --default-bucket 用（run.sh はキーを CLI で生成する）
+env_compose_only GARAGE_DEFAULT_ACCESS_KEY GARAGE_DEFAULT_SECRET_KEY GARAGE_DEFAULT_BUCKET
+
+RUNTIME="$CONTAINER_RUNTIME"
 NAME="handbook-garage"
-IMAGE="${GARAGE_IMAGE:-docker.io/dxflrs/garage:v2.5.0}"
-S3_PORT="${GARAGE_S3_PORT:-3900}"
-WEB_PORT="${GARAGE_WEB_PORT:-3902}"
-ADMIN_PORT="${GARAGE_ADMIN_PORT:-3903}"
-CAPACITY="${GARAGE_CAPACITY:-10G}"
-KEY_NAME="${GARAGE_KEY_NAME:-handbook-key}"
-BUCKET="${GARAGE_BUCKET:-handbook}"
-ENV_FILE="$SCRIPT_DIR/.garage_env"
+IMAGE="$GARAGE_IMAGE"
+S3_PORT="$GARAGE_S3_PORT"
+WEB_PORT="$GARAGE_WEB_PORT"
+ADMIN_PORT="$GARAGE_ADMIN_PORT"
+CAPACITY="$GARAGE_CAPACITY"
+KEY_NAME="$GARAGE_KEY_NAME"
+BUCKET="$GARAGE_BUCKET"
+# 生成した S3 認証情報の出力先（ENV_FILE は設定ファイルの指定に使うので別名にする）
+CRED_FILE="$SCRIPT_DIR/.garage_env"
 
 container_exists() { "$RUNTIME" container inspect "$NAME" >/dev/null 2>&1; }
 container_running() {
@@ -39,8 +58,8 @@ wait_until() {
 print_info() {
     echo "  S3 API:    http://localhost:$S3_PORT（リージョン: garage）"
     echo "  Admin API: http://localhost:$ADMIN_PORT（Web UI は同梱されない）"
-    if [ -f "$ENV_FILE" ]; then
-        echo "  認証情報:  source $ENV_FILE で AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY を設定する"
+    if [ -f "$CRED_FILE" ]; then
+        echo "  認証情報:  source $CRED_FILE で AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY を設定する"
     fi
 }
 
@@ -86,17 +105,18 @@ init_cluster() {
     fi
     garage bucket allow --read --write --owner "$BUCKET" --key "$KEY_NAME" >/dev/null
 
-    cat > "$ENV_FILE" <<EOF
+    cat > "$CRED_FILE" <<EOF
 export AWS_ACCESS_KEY_ID="$access_key"
 export AWS_SECRET_ACCESS_KEY="$secret_key"
 export AWS_DEFAULT_REGION="garage"
 export AWS_ENDPOINT_URL="http://localhost:$S3_PORT"
 EOF
-    chmod 600 "$ENV_FILE"
-    echo "キー $KEY_NAME とバケット $BUCKET を用意した（認証情報: $ENV_FILE）"
+    chmod 600 "$CRED_FILE"
+    echo "キー $KEY_NAME とバケット $BUCKET を用意した（認証情報: $CRED_FILE）"
 }
 
 cmd_start() {
+    env_print_source
     if container_running; then
         echo "$NAME は起動済み"
     elif container_exists; then
@@ -150,7 +170,7 @@ cmd_purge() {
     fi
     cmd_stop
     "$RUNTIME" volume rm "${NAME}-meta" "${NAME}-data" >/dev/null 2>&1 && echo "ボリュームを削除した" || true
-    rm -f "$ENV_FILE"
+    rm -f "$CRED_FILE"
 }
 
 case "${1:-}" in
@@ -159,5 +179,6 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) cmd_logs ;;
     purge) cmd_purge ;;
-    *) echo "使い方: $0 {start|stop|status|logs|purge}" >&2; exit 1 ;;
+    config) env_print_config ;;
+    *) echo "使い方: $0 {start|stop|status|logs|purge|config}" >&2; exit 1 ;;
 esac

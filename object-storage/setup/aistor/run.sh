@@ -1,20 +1,35 @@
 #!/usr/bin/env bash
 # MinIO AIStor（商用版）を単一ノードで起動・停止する
-# 使い方: ./run.sh {start|stop|status|logs|purge}
-#   CONTAINER_RUNTIME=docker ./run.sh start のようにランタイムを切り替えられる（既定は podman）
+# 使い方: ./run.sh {start|stop|status|logs|purge|config}
+#   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
+#   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
+#   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
 #   ライセンスファイルは既定で このディレクトリの minio.license を読む（AISTOR_LICENSE_FILE で変更可）
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUNTIME="${CONTAINER_RUNTIME:-podman}"
+. "$SCRIPT_DIR/../lib/env.sh"
+env_load "$SCRIPT_DIR"
+
+# 既定値は .env.example と compose.yaml に揃える
+env_var CONTAINER_RUNTIME podman
+env_var AISTOR_IMAGE quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
+# 相対パスは compose と同じくこのディレクトリ基準で解決する
+env_var AISTOR_LICENSE_FILE ./minio.license
+env_var AISTOR_S3_PORT 9010
+env_var AISTOR_CONSOLE_PORT 9011
+env_var AISTOR_ROOT_USER minioadmin
+env_var AISTOR_ROOT_PASSWORD minioadmin secret
+
+RUNTIME="$CONTAINER_RUNTIME"
 NAME="handbook-aistor"
 VOLUME="${NAME}-data"
-IMAGE="${AISTOR_IMAGE:-quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z}"
-LICENSE_FILE="${AISTOR_LICENSE_FILE:-$SCRIPT_DIR/minio.license}"
-S3_PORT="${AISTOR_S3_PORT:-9010}"
-CONSOLE_PORT="${AISTOR_CONSOLE_PORT:-9011}"
-ROOT_USER="${AISTOR_ROOT_USER:-minioadmin}"
-ROOT_PASSWORD="${AISTOR_ROOT_PASSWORD:-minioadmin}"
+IMAGE="$AISTOR_IMAGE"
+LICENSE_FILE="$(env_abs_path "$AISTOR_LICENSE_FILE" "$SCRIPT_DIR")"
+S3_PORT="$AISTOR_S3_PORT"
+CONSOLE_PORT="$AISTOR_CONSOLE_PORT"
+ROOT_USER="$AISTOR_ROOT_USER"
+ROOT_PASSWORD="$AISTOR_ROOT_PASSWORD"
 
 container_exists() { "$RUNTIME" container inspect "$NAME" >/dev/null 2>&1; }
 container_running() {
@@ -39,6 +54,7 @@ print_info() {
 }
 
 cmd_start() {
+    env_print_source
     if container_running; then
         echo "$NAME は起動済み"
         print_info
@@ -109,5 +125,6 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) cmd_logs ;;
     purge) cmd_purge ;;
-    *) echo "使い方: $0 {start|stop|status|logs|purge}" >&2; exit 1 ;;
+    config) env_print_config ;;
+    *) echo "使い方: $0 {start|stop|status|logs|purge|config}" >&2; exit 1 ;;
 esac

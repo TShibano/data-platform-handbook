@@ -9,20 +9,22 @@
 
 ## 起動
 
+設定は `.env` で与える（[../README.md の「設定方法（.env）」](../README.md#設定方法env)）．`.env` が無ければ既定値で起動する．
+
+```bash
+cp .env.example .env        # 必要な行だけ編集する
+./run.sh config             # 実際に使われる値を確認する
+```
+
 ```bash
 # compose
 podman compose up -d        # または docker compose up -d
 
 # スクリプト
-./run.sh start              # docker を使う場合: CONTAINER_RUNTIME=docker ./run.sh start
+./run.sh start              # docker を使う場合は .env に CONTAINER_RUNTIME=docker
 ```
 
-| 変数 | 既定値 |
-|---|---|
-| `RUSTFS_IMAGE` | `docker.io/rustfs/rustfs:1.0.5` |
-| `RUSTFS_S3_PORT` | `9020` |
-| `RUSTFS_CONSOLE_PORT` | `9021` |
-| `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` | `rustfsadmin` / `rustfsadmin` |
+設定できる変数（イメージ，ポート，認証情報）と既定値は [.env.example](.env.example) を参照．
 
 コンテナに渡している主な環境変数（公式ドキュメントより）:
 
@@ -59,7 +61,7 @@ podman compose down -v            # ボリュームも削除
 
 ## 注意点
 
-- 公式ドキュメントは「`rustfsadmin` を認証情報に使わないこと」と明記している．localhost 以外へ公開する場合は `openssl rand -base64 24` 等で生成した値を `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` に設定する
+- 公式ドキュメントは「`rustfsadmin` を認証情報に使わないこと」と明記している．localhost 以外へ公開する場合は `openssl rand -base64 24` 等で生成した値を `.env` の `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` に設定する
 - 1.0 GA から2か月程度で，パッチリリースが2週間程度の間隔で出ている．固定タグを定期的に見直すこと
 - 本手順は単一ノード・単一ドライブ．複数ノード構成は `--network host` と `RUSTFS_VOLUMES="http://node{1...4}:9000/data/rustfs{0...3}"` のような指定が必要（公式ドキュメント参照）
 - コンソールの URL パス（ルート直下か `/rustfs/console/` 等のサブパスか）は 1.0.5 で実機未確認（要確認）

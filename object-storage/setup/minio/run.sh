@@ -1,23 +1,37 @@
 #!/usr/bin/env bash
 # MinIO（コミュニティ版）を単一ノードで起動・停止する
-# 使い方: ./run.sh {start|stop|status|logs|purge|build}
-#   CONTAINER_RUNTIME=docker ./run.sh start のようにランタイムを切り替えられる（既定は podman）
+# 使い方: ./run.sh {start|stop|status|logs|purge|build|config}
+#   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
+#   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
+#   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
 #   公式ソースを同じディレクトリの Dockerfile でビルドしたイメージを使う．
 #   start はイメージが無ければビルドしてから起動し，build は常に再ビルドする．
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUNTIME="${CONTAINER_RUNTIME:-podman}"
+. "$SCRIPT_DIR/../lib/env.sh"
+env_load "$SCRIPT_DIR"
+
+# 既定値は .env.example と compose.yaml に揃える
+env_var CONTAINER_RUNTIME podman
+# 公式リポジトリ github.com/minio/minio の最終リリースタグ
+env_var MINIO_VERSION RELEASE.2025-10-15T17-29-55Z
+# 既存のイメージ（キャッシュ済みの公式イメージ等）を使う場合は MINIO_IMAGE で上書きする
+env_var MINIO_IMAGE "localhost/handbook-minio:$MINIO_VERSION"
+env_var MINIO_S3_PORT 9000
+env_var MINIO_CONSOLE_PORT 9001
+env_var MINIO_ROOT_USER minioadmin
+env_var MINIO_ROOT_PASSWORD minioadmin secret
+
+RUNTIME="$CONTAINER_RUNTIME"
 NAME="handbook-minio"
 VOLUME="${NAME}-data"
-# 公式リポジトリ github.com/minio/minio の最終リリースタグ（compose.yaml と揃える）
-VERSION="${MINIO_VERSION:-RELEASE.2025-10-15T17-29-55Z}"
-# 既存のイメージ（キャッシュ済みの公式イメージ等）を使う場合は MINIO_IMAGE で上書きする
-IMAGE="${MINIO_IMAGE:-localhost/handbook-minio:$VERSION}"
-S3_PORT="${MINIO_S3_PORT:-9000}"
-CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
-ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
-ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
+VERSION="$MINIO_VERSION"
+IMAGE="$MINIO_IMAGE"
+S3_PORT="$MINIO_S3_PORT"
+CONSOLE_PORT="$MINIO_CONSOLE_PORT"
+ROOT_USER="$MINIO_ROOT_USER"
+ROOT_PASSWORD="$MINIO_ROOT_PASSWORD"
 
 container_exists() { "$RUNTIME" container inspect "$NAME" >/dev/null 2>&1; }
 container_running() {
@@ -56,6 +70,7 @@ cmd_build() {
 }
 
 cmd_start() {
+    env_print_source
     if container_running; then
         echo "$NAME は起動済み"
         print_info
@@ -120,5 +135,6 @@ case "${1:-}" in
     logs) cmd_logs ;;
     purge) cmd_purge ;;
     build) cmd_build ;;
-    *) echo "使い方: $0 {start|stop|status|logs|purge|build}" >&2; exit 1 ;;
+    config) env_print_config ;;
+    *) echo "使い方: $0 {start|stop|status|logs|purge|build|config}" >&2; exit 1 ;;
 esac

@@ -43,34 +43,34 @@
 
 ## 起動
 
+設定は `.env` で与える（[../README.md の「設定方法（.env）」](../README.md#設定方法env)）．`.env` が無ければ既定値で起動する．
+
+```bash
+cp .env.example .env        # 必要な行だけ編集する
+./run.sh config             # 実際に使われる値を確認する
+```
+
 ```bash
 # compose（初回はビルドが走る）
 podman compose up -d --build        # または docker compose up -d --build
 
 # スクリプト（イメージが無ければビルドしてから起動する）
-./run.sh start                      # docker を使う場合: CONTAINER_RUNTIME=docker ./run.sh start
+./run.sh start                      # docker を使う場合は .env に CONTAINER_RUNTIME=docker
 ./run.sh build                      # 強制的に再ビルドする
 ```
 
-環境変数で上書きできる項目:
-
-| 変数 | 既定値 | 備考 |
-|---|---|---|
-| `MINIO_VERSION` | `RELEASE.2025-10-15T17-29-55Z` | ビルドする公式リポジトリのタグ（compose / run.sh 共通） |
-| `MINIO_IMAGE` | `localhost/handbook-minio:$MINIO_VERSION` | run.sh のみ．既存イメージを使う場合に指定（無ければこのタグでビルドする） |
-| `MINIO_S3_PORT` | `9000` | |
-| `MINIO_CONSOLE_PORT` | `9001` | |
-| `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | `minioadmin` / `minioadmin` | |
+設定できる変数と既定値は [.env.example](.env.example) を参照（ビルドするタグ `MINIO_VERSION`，run.sh 専用の `MINIO_IMAGE`，ポート，ルート認証情報）．
 
 ### バージョンを変える
 
-`MINIO_VERSION` に公式リポジトリのタグ名（`RELEASE.YYYY-MM-DDThh-mm-ssZ` 形式）を指定してビルドし直す．タグ一覧は `gh api 'repos/minio/minio/tags?per_page=20' --jq '.[].name'` で確認できる．
+`.env` の `MINIO_VERSION` に公式リポジトリのタグ名（`RELEASE.YYYY-MM-DDThh-mm-ssZ` 形式）を書いてビルドし直す．タグ一覧は `gh api 'repos/minio/minio/tags?per_page=20' --jq '.[].name'` で確認できる．
 
 ```bash
-MINIO_VERSION=RELEASE.2025-09-07T16-13-09Z ./run.sh build
-./run.sh stop && MINIO_VERSION=RELEASE.2025-09-07T16-13-09Z ./run.sh start
+# .env: MINIO_VERSION=RELEASE.2025-09-07T16-13-09Z
+./run.sh build
+./run.sh stop && ./run.sh start
 
-MINIO_VERSION=RELEASE.2025-09-07T16-13-09Z podman compose up -d --build
+podman compose up -d --build      # compose も同じ .env を読む
 ```
 
 - 古いタグは `go.mod` の要求 Go バージョンが異なる場合がある．Dockerfile の `GO_IMAGE` を `--build-arg GO_IMAGE=docker.io/library/golang:<ver>` で合わせる
@@ -81,7 +81,8 @@ MINIO_VERSION=RELEASE.2025-09-07T16-13-09Z podman compose up -d --build
 ベンチマーク（`../../benchmark/scripts/start_minio.sh`）では `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z` を使っていた．このイメージがローカルにキャッシュ済みであれば，run.sh で差し替えられる．
 
 ```bash
-MINIO_IMAGE=quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z ./run.sh start
+# .env: MINIO_IMAGE=quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+./run.sh start
 ```
 
 公式イメージは root で動くため，同じボリュームを本手順のイメージ（非 root）と使い回すと権限エラーになり得る．切り替えるときは `./run.sh purge` でボリュームを作り直す．
