@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # MinIO（コミュニティ版）を単一ノードで起動・停止する
-# 使い方: ./run.sh {start|stop|status|logs|purge}
+# 使い方: ./run.sh {start|stop|status|logs|purge|build}
 #   CONTAINER_RUNTIME=docker ./run.sh start のようにランタイムを切り替えられる（既定は podman）
+#   公式ソースを同じディレクトリの Dockerfile でビルドしたイメージを使う．
+#   start はイメージが無ければビルドしてから起動し，build は常に再ビルドする．
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 NAME="handbook-minio"
 VOLUME="${NAME}-data"
-# 公式イメージは匿名取得できないため，コミュニティフォークの最終 MinIO 名義リリースを既定にする
-IMAGE="${MINIO_IMAGE:-docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z}"
+# 公式リポジトリ github.com/minio/minio の最終リリースタグ（compose.yaml と揃える）
+VERSION="${MINIO_VERSION:-RELEASE.2025-10-15T17-29-55Z}"
+# 既存のイメージ（キャッシュ済みの公式イメージ等）を使う場合は MINIO_IMAGE で上書きする
+IMAGE="${MINIO_IMAGE:-localhost/handbook-minio:$VERSION}"
 S3_PORT="${MINIO_S3_PORT:-9000}"
 CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
 ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
@@ -36,6 +41,20 @@ print_info() {
     echo "  認証情報: $ROOT_USER / $ROOT_PASSWORD"
 }
 
+image_exists() { "$RUNTIME" image inspect "$IMAGE" >/dev/null 2>&1; }
+
+cmd_build() {
+    echo "$IMAGE をビルドする（MINIO_VERSION=${VERSION}．初回は数分かかる）"
+    "$RUNTIME" build \
+        --build-arg MINIO_VERSION="$VERSION" \
+        -t "$IMAGE" \
+        -f "$SCRIPT_DIR/Dockerfile" \
+        "$SCRIPT_DIR"
+    if container_exists; then
+        echo "既存のコンテナ $NAME は古いイメージのまま．反映するには ./run.sh stop && ./run.sh start を実行する"
+    fi
+}
+
 cmd_start() {
     if container_running; then
         echo "$NAME は起動済み"
@@ -45,6 +64,8 @@ cmd_start() {
     if container_exists; then
         "$RUNTIME" start "$NAME" >/dev/null
     else
+        # `image_exists || cmd_build` だと cmd_build 内で set -e が効かないため if で書く
+        if ! image_exists; then cmd_build; fi
         "$RUNTIME" run -d \
             --name "$NAME" \
             -p "$S3_PORT:9000" \
@@ -98,5 +119,6 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) cmd_logs ;;
     purge) cmd_purge ;;
-    *) echo "使い方: $0 {start|stop|status|logs|purge}" >&2; exit 1 ;;
+    build) cmd_build ;;
+    *) echo "使い方: $0 {start|stop|status|logs|purge|build}" >&2; exit 1 ;;
 esac
