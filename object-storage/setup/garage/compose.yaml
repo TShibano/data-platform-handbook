@@ -9,6 +9,10 @@ services:
     container_name: handbook-garage
     command: ["/garage", "server", "--single-node", "--default-bucket"]
     environment:
+      # 秘密値は garage.toml に書かず環境変数で渡す（Garage が rpc_secret / admin.admin_token として使う）．
+      # 既定値は以前 garage.toml に書いていた固定値と同じ．変更方法は .env.example を参照
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-00ba16efd7193aa76afe0514a5e67ecfb902937a9f2b390c6c6da821385307cb}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:-handbook-admin-token-change-me}
       # キー ID は8文字以上の英数字と -_.，シークレットは16文字以上の印字可能 ASCII
       GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_DEFAULT_ACCESS_KEY:-GKhandbook0000000000000000}
       GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_DEFAULT_SECRET_KEY:-handbook-garage-secret-change-me}

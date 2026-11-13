@@ -2,6 +2,8 @@
 # 使い方: docker compose up -d / podman compose up -d
 #
 # S3 認証は s3.json で定義する（認証情報が1件も無いと全操作が匿名で許可されるため）．
+# s3.json のキーは ${SEAWEEDFS_S3_ACCESS_KEY} 等の参照になっており，SeaweedFS が起動時に
+# コンテナの環境変数で置き換える（下の environment: で .env の値を渡す）．
 # 管理UIはパスワード未設定だとコンテナ内の 127.0.0.1 にしかバインドされずホストから開けないので，
 # -admin.password を指定してパスワード認証付きで公開する．
 services:
@@ -13,6 +15,11 @@ services:
       - -dir=/data
       - -s3.config=/config/s3.json
       - -admin.password=${SEAWEEDFS_ADMIN_PASSWORD:-admin}
+    environment:
+      # s3.json の ${SEAWEEDFS_S3_ACCESS_KEY} / ${SEAWEEDFS_S3_SECRET_KEY} を置き換える値．
+      # 既定値は以前 s3.json に直書きしていた値と同じ
+      SEAWEEDFS_S3_ACCESS_KEY: ${SEAWEEDFS_S3_ACCESS_KEY:-handbook-access-key}
+      SEAWEEDFS_S3_SECRET_KEY: ${SEAWEEDFS_S3_SECRET_KEY:-handbook-secret-key-change-me}
     ports:
       - "${SEAWEEDFS_S3_PORT:-8333}:8333"       # S3 API
       - "${SEAWEEDFS_ADMIN_PORT:-12535}:12535"  # 管理UI（ユーザー名 admin）
