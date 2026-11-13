@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Garage を単一ノードで起動し，レイアウト設定・キー作成・バケット作成まで行う
-# 使い方: ./run.sh {start|stop|status|logs|purge|config}
+# 使い方: ./run.sh {start|stop|status|logs|purge|config [--show-secrets]}
 #   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
 #   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
 #   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
@@ -21,6 +21,10 @@ env_var GARAGE_ADMIN_PORT 3903
 env_var GARAGE_CAPACITY 10G
 env_var GARAGE_KEY_NAME handbook-key
 env_var GARAGE_BUCKET handbook
+# 秘密値．garage.toml には書かず，同名の環境変数としてコンテナに渡す（Garage が設定ファイルの値として使う）．
+# 既定値は以前 garage.toml に書いていた固定値と同じ（既存ボリュームとの互換のため）
+env_var GARAGE_RPC_SECRET 00ba16efd7193aa76afe0514a5e67ecfb902937a9f2b390c6c6da821385307cb secret
+env_var GARAGE_ADMIN_TOKEN handbook-admin-token-change-me secret
 # compose の --single-node / --default-bucket 用（run.sh はキーを CLI で生成する）
 env_compose_only GARAGE_DEFAULT_ACCESS_KEY GARAGE_DEFAULT_SECRET_KEY GARAGE_DEFAULT_BUCKET
 
@@ -33,12 +37,31 @@ ADMIN_PORT="$GARAGE_ADMIN_PORT"
 CAPACITY="$GARAGE_CAPACITY"
 KEY_NAME="$GARAGE_KEY_NAME"
 BUCKET="$GARAGE_BUCKET"
+RPC_SECRET="$GARAGE_RPC_SECRET"
+ADMIN_TOKEN="$GARAGE_ADMIN_TOKEN"
 # 生成した S3 認証情報の出力先（ENV_FILE は設定ファイルの指定に使うので別名にする）
 CRED_FILE="$SCRIPT_DIR/.garage_env"
 
 container_exists() { "$RUNTIME" container inspect "$NAME" >/dev/null 2>&1; }
 container_running() {
     [ "$("$RUNTIME" container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ]
+}
+
+# 既存コンテナが GARAGE_RPC_SECRET を環境変数として持つか（garage.toml から rpc_secret を外したため，持たないコンテナでは CLI もデーモンの再起動も失敗する）
+check_container_env() {
+    container_exists || return 0
+    # grep -q へのパイプは pipefail 下で SIGPIPE を失敗と誤判定し得るため，変数に受けて case で調べる
+    local env_list
+    env_list="$("$RUNTIME" container inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME")"
+    case $'\n'"$env_list" in
+        *$'\n'GARAGE_RPC_SECRET=*) return 0 ;;
+    esac
+    {
+        echo "エラー: 既存のコンテナ $NAME は秘密値を環境変数で渡す前の run.sh / compose で作られている．"
+        echo "  このままでは garage.toml に rpc_secret が無いため CLI（garage status 等）が動かない．"
+        echo "  ./run.sh stop && ./run.sh start でコンテナを作り直す（ボリュームのデータは残る）"
+    } >&2
+    exit 1
 }
 
 # イメージにシェルが無いため，CLI は /garage を直接 exec する
@@ -51,13 +74,13 @@ wait_until() {
         if "$@" >/dev/null 2>&1; then return 0; fi
         sleep 1
     done
-    echo "タイムアウト: $desc（$RUNTIME logs $NAME で確認する）" >&2
+    echo "タイムアウト: ${desc}（$RUNTIME logs $NAME で確認する）" >&2
     return 1
 }
 
 print_info() {
-    echo "  S3 API:    http://localhost:$S3_PORT（リージョン: garage）"
-    echo "  Admin API: http://localhost:$ADMIN_PORT（Web UI は同梱されない）"
+    echo "  S3 API:    http://localhost:${S3_PORT}（リージョン: garage）"
+    echo "  Admin API: http://localhost:${ADMIN_PORT}（Web UI は同梱されない．トークン: $(env_secret "$ADMIN_TOKEN")，平文: $0 config --show-secrets）"
     if [ -f "$CRED_FILE" ]; then
         echo "  認証情報:  source $CRED_FILE で AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY を設定する"
     fi
@@ -112,11 +135,21 @@ export AWS_DEFAULT_REGION="garage"
 export AWS_ENDPOINT_URL="http://localhost:$S3_PORT"
 EOF
     chmod 600 "$CRED_FILE"
-    echo "キー $KEY_NAME とバケット $BUCKET を用意した（認証情報: $CRED_FILE）"
+    echo "キー $KEY_NAME とバケット $BUCKET を用意した（認証情報: ${CRED_FILE}）"
+}
+
+# rpc_secret は 32 バイトの16進文字列（64文字）でないと Garage が起動しない．起動前に検査する
+check_rpc_secret() {
+    if ! [[ "$RPC_SECRET" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        echo "エラー: GARAGE_RPC_SECRET は64文字の16進文字列にする（例: openssl rand -hex 32）" >&2
+        exit 1
+    fi
 }
 
 cmd_start() {
     env_print_source
+    check_rpc_secret
+    check_container_env
     if container_running; then
         echo "$NAME は起動済み"
     elif container_exists; then
@@ -127,6 +160,8 @@ cmd_start() {
             -p "$S3_PORT:3900" \
             -p "$WEB_PORT:3902" \
             -p "$ADMIN_PORT:3903" \
+            -e GARAGE_RPC_SECRET="$RPC_SECRET" \
+            -e GARAGE_ADMIN_TOKEN="$ADMIN_TOKEN" \
             -v "$SCRIPT_DIR/garage.toml:/etc/garage.toml:ro" \
             -v "${NAME}-meta:/var/lib/garage/meta" \
             -v "${NAME}-data:/var/lib/garage/data" \
@@ -152,6 +187,7 @@ cmd_stop() {
 cmd_status() {
     if container_running; then
         echo "$NAME: 起動中"
+        check_container_env
         garage status
         print_info
     elif container_exists; then
@@ -179,6 +215,6 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) cmd_logs ;;
     purge) cmd_purge ;;
-    config) env_print_config ;;
-    *) echo "使い方: $0 {start|stop|status|logs|purge|config}" >&2; exit 1 ;;
+    config) shift; env_print_config "$@" ;;
+    *) echo "使い方: $0 {start|stop|status|logs|purge|config [--show-secrets]}" >&2; exit 1 ;;
 esac

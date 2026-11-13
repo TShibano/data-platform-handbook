@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # MinIO（コミュニティ版）を単一ノードで起動・停止する
-# 使い方: ./run.sh {start|stop|status|logs|purge|build|config}
+# 使い方: ./run.sh {start|stop|status|logs|purge|build|config [--show-secrets]}
 #   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
 #   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
 #   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
@@ -45,14 +45,15 @@ wait_until() {
         if "$@" >/dev/null 2>&1; then return 0; fi
         sleep 1
     done
-    echo "タイムアウト: $desc（$RUNTIME logs $NAME で確認する）" >&2
+    echo "タイムアウト: ${desc}（$RUNTIME logs $NAME で確認する）" >&2
     return 1
 }
 
 print_info() {
     echo "  S3 API:  http://localhost:$S3_PORT"
     echo "  Console: http://localhost:$CONSOLE_PORT"
-    echo "  認証情報: $ROOT_USER / $ROOT_PASSWORD"
+    # パスワードはマスクする（平文は ./run.sh config --show-secrets）
+    echo "  認証情報: $ROOT_USER / $(env_secret "$ROOT_PASSWORD")（平文: $0 config --show-secrets）"
 }
 
 image_exists() { "$RUNTIME" image inspect "$IMAGE" >/dev/null 2>&1; }
@@ -135,6 +136,6 @@ case "${1:-}" in
     logs) cmd_logs ;;
     purge) cmd_purge ;;
     build) cmd_build ;;
-    config) env_print_config ;;
-    *) echo "使い方: $0 {start|stop|status|logs|purge|build|config}" >&2; exit 1 ;;
+    config) shift; env_print_config "$@" ;;
+    *) echo "使い方: $0 {start|stop|status|logs|purge|build|config [--show-secrets]}" >&2; exit 1 ;;
 esac

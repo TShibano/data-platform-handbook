@@ -4,7 +4,7 @@ S3互換オブジェクトストレージ5製品（MinIO / AIStor / RustFS / Gar
 各製品とも `compose.yaml`（`docker compose` / `podman compose` 両対応）と `run.sh`（`docker run` 相当のシェルスクリプト）の2通りで起動できる．
 
 - 情報の確認日: 2026-11-12（各製品の出典は各ディレクトリの README に記載）
-- 動作実績: `../benchmark/scripts/` のベンチマーク用スクリプト（Podman, macOS, Apple Silicon）をもとにしている．ただし本ディレクトリの設定そのものは，MinIO（ソースビルド方式，2026-11-13 に Podman で実ビルド・起動・PUT/GET を確認）を除き実起動での検証をしていない
+- 動作実績: `../benchmark/scripts/` のベンチマーク用スクリプト（Podman, macOS, Apple Silicon）をもとにしている．ただし本ディレクトリの設定そのものは，MinIO（ソースビルド方式，2026-11-13 に Podman で実ビルド・起動・PUT/GET を確認）と，Garage / SeaweedFS の秘密値の `.env` 設定（2026-11-13 に Podman で run.sh / compose の両方で起動し，変更した値が効き旧値が拒否されることを確認）を除き実起動での検証をしていない
 - ホストポートは製品ごとにずらしてあり，5製品を同時に起動できる
 
 ## 製品比較
@@ -14,8 +14,8 @@ S3互換オブジェクトストレージ5製品（MinIO / AIStor / RustFS / Gar
 | [MinIO](minio/) | AGPL-3.0 | `localhost/handbook-minio:RELEASE.2025-10-15T17-29-55Z`（公式ソース `minio/minio` の最終タグをローカルでビルド） | 9000 | あり（9001） | `minioadmin` / `minioadmin` | 可 |
 | [AIStor](aistor/) | 商用（AIStor Free 契約 / Enterprise） | `quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z` | 9010 | あり（9011） | `minioadmin` / `minioadmin` | 可（Free は単一ノードのみ．ライセンスファイルが必要） |
 | [RustFS](rustfs/) | Apache-2.0 | `docker.io/rustfs/rustfs:1.0.5` | 9020 | あり（9021） | `rustfsadmin` / `rustfsadmin`（本ディレクトリの既定値．公式は変更を強く推奨） | 可 |
-| [Garage](garage/) | AGPL-3.0 | `docker.io/dxflrs/garage:v2.5.0` | 3900 | なし（Admin API 3903 のみ） | run.sh: 起動時に生成し `.garage_env` へ出力 / compose: 環境変数で指定 | 可（`replication_factor = 1`） |
-| [SeaweedFS](seaweedfs/) | Apache-2.0 | `docker.io/chrislusf/seaweedfs:4.53` | 8333 | あり（管理UI 12535，master 9333，filer 8888） | `s3.json` で定義（`handbook-access-key` / `handbook-secret-key-change-me`） | 可（`weed mini`） |
+| [Garage](garage/) | AGPL-3.0 | `docker.io/dxflrs/garage:v2.5.0` | 3900 | なし（Admin API 3903 のみ） | run.sh: 起動時に生成し `.garage_env` へ出力 / compose: `.env` で指定（`GKhandbook0000000000000000` / `handbook-garage-secret-change-me`） | 可（`replication_factor = 1`） |
+| [SeaweedFS](seaweedfs/) | Apache-2.0 | `docker.io/chrislusf/seaweedfs:4.53` | 8333 | あり（管理UI 12535，master 9333，filer 8888） | `.env` で指定（`handbook-access-key` / `handbook-secret-key-change-me`．`s3.json` が環境変数を参照） | 可（`weed mini`） |
 
 ### ホストポート割当
 
@@ -49,7 +49,8 @@ podman compose down          # 停止（データは名前付きボリューム�
 
 # スクリプト（既定は podman．docker を使う場合は .env に CONTAINER_RUNTIME=docker）
 ./run.sh start
-./run.sh config              # 実際に使われる設定値と出所を表示する（パスワード類はマスク）
+./run.sh config              # 実際に使われる設定値と出所を表示する（秘密値はマスク）
+./run.sh config --show-secrets  # 秘密値も平文で表示する
 ./run.sh status
 ./run.sh logs
 ./run.sh stop                # 停止・コンテナ削除（データは残る）
@@ -94,7 +95,7 @@ podman compose --env-file .env.bench up -d        # compose 側は --env-file �
 
 ### config サブコマンド
 
-`./run.sh config` は，run.sh が実際に使う値と出所（`env`=シェルの環境変数，`file`=設定ファイル，`default`=既定値）を表示する．パスワード・シークレットは `****（文字数）` にマスクする．`.env` に run.sh が使わない変数があれば，compose 専用か綴り間違いかを注意として出す．`start` も最初に読み込んだ設定ファイルのパスを1行表示する．
+`./run.sh config` は，run.sh が実際に使う値と出所（`env`=シェルの環境変数，`file`=設定ファイル，`default`=既定値）を表示する．秘密値（パスワード・シークレット・トークン）は `****（文字数）` にマスクし，`./run.sh config --show-secrets` のときだけ平文で表示する．`.env` に run.sh が使わない変数があれば，compose 専用か綴り間違いかを注意として出す．`start` も最初に読み込んだ設定ファイルのパスを1行表示する．
 
 ```
 $ MINIO_S3_PORT=19000 ./run.sh config
@@ -107,6 +108,7 @@ $ MINIO_S3_PORT=19000 ./run.sh config
   MINIO_CONSOLE_PORT           [file]     19101
   MINIO_ROOT_USER              [default]  minioadmin
   MINIO_ROOT_PASSWORD          [file]     ****（10文字）
+（秘密値を平文で見るには: ./run.sh config --show-secrets）
 ```
 
 compose 側で解決後の値を確認するには `podman compose config`（`docker compose config`）を使う．
@@ -125,6 +127,28 @@ compose 側で解決後の値を確認するには `podman compose config`（`do
 ### コンテナに渡す環境変数
 
 `.env` をコンテナに丸ごと渡す（`--env-file` / compose の `env_file:`）ことはしない．`.env` にはポートやイメージタグなどコンテナに無関係な変数も入っているためで，run.sh は `-e MINIO_ROOT_USER=...` のように，compose は `environment:` で，必要な変数だけを明示的にマッピングしている．
+
+### 秘密値
+
+認証情報・トークン・シークレットはすべて `.env` で設定できる．設定ファイル（`garage.toml` / `s3.json`）には秘密値を書かず，`.env` の値を環境変数としてコンテナに渡す．
+
+| 製品 | `.env` の変数 | コンテナでの使われ方 | 既定値 |
+|---|---|---|---|
+| MinIO | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | 同名の環境変数 | `minioadmin` / `minioadmin` |
+| AIStor | `AISTOR_ROOT_USER` / `AISTOR_ROOT_PASSWORD` | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | `minioadmin` / `minioadmin` |
+| RustFS | `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` | 同名の環境変数 | `rustfsadmin` / `rustfsadmin` |
+| Garage | `GARAGE_RPC_SECRET` / `GARAGE_ADMIN_TOKEN` | 同名の環境変数．Garage が `garage.toml` の `rpc_secret` / `admin.admin_token` として使う | 以前 `garage.toml` に書いていた固定値 |
+| Garage（compose のみ） | `GARAGE_DEFAULT_ACCESS_KEY` / `GARAGE_DEFAULT_SECRET_KEY` | 同名の環境変数（`--single-node --default-bucket` の既定キー） | `GKhandbook0000000000000000` / `handbook-garage-secret-change-me` |
+| SeaweedFS | `SEAWEEDFS_S3_ACCESS_KEY` / `SEAWEEDFS_S3_SECRET_KEY` | 同名の環境変数．`s3.json` の `${SEAWEEDFS_S3_ACCESS_KEY}` 等を SeaweedFS が置き換える | 以前 `s3.json` に書いていた値 |
+| SeaweedFS | `SEAWEEDFS_ADMIN_PASSWORD` | `weed mini -admin.password=...` | `admin` |
+
+- 既定値はすべてリポジトリで公開されているダミー値で，`.env` が無いときの挙動（と既存ボリュームとの互換）を保つために以前の固定値のままにしている．localhost 以外へ公開する場合や共有環境では必ず `.env` で変更する（生成例は各 `.env.example`）
+- Garage の run.sh が生成する S3 キー（`.garage_env`）は Garage が作る値で，`.env` の入力ではない（次節）
+- AIStor のライセンスファイルは秘密値そのものではなくパスを `AISTOR_LICENSE_FILE` で指定する．個人に紐づくのでコミットしない（`.gitignore` で除外）
+- 表示: `start` / `status` / `config` は秘密値を `****（文字数）` にマスクする（端末のスクロールバックやログに残さないため）．平文は `./run.sh config --show-secrets` で明示的に表示する．アクセスキー ID・ユーザー名は識別子なので平文で表示する
+- `.env` の変更は既存のコンテナには反映されない（環境変数はコンテナ作成時に固定される）．run.sh は `./run.sh stop && ./run.sh start`，compose は `podman compose up -d --force-recreate` で作り直す（データはボリュームに残る）
+- コンテナに渡した環境変数は `podman inspect` で誰でも読める．同じホストの他ユーザーから守る必要がある場合は，Garage の `GARAGE_*_FILE` や compose の `secrets:` 等，ファイル経由で渡す方式を検討する（本手順では扱わない）
+- Garage / SeaweedFS は，秘密値を設定ファイルに直書きしていた旧版で作ったコンテナを run.sh が検出してエラーにする（作り直しを促す）．詳細は各 README
 
 ### Garage の `.garage_env` との違い
 

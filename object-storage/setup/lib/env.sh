@@ -6,6 +6,7 @@
 #   env_var MINIO_S3_PORT 9000                     # 実際に使う値を決め，出所を記録する
 #   env_var MINIO_ROOT_PASSWORD minioadmin secret  # config 表示でマスクする
 #   env_print_config                               # config サブコマンド用の一覧表示
+#   env_secret "$MINIO_ROOT_PASSWORD"              # 秘密値を表示用にマスクする（start / status 用）
 #
 # 優先順位は docker compose / podman-compose と揃える:
 #   シェルで明示的に与えた環境変数 > .env（ENV_FILE） > スクリプトの既定値
@@ -27,6 +28,8 @@ ENV_DECLARED=()
 ENV_FILE_KEYS=()
 # compose.yaml だけが使う変数名（config で「未使用」の注意を出さない）
 ENV_COMPOSE_ONLY=()
+# 1 なら秘密値をマスクせずに表示する（config --show-secrets で立てる）
+ENV_SHOW_SECRETS=0
 
 # 前後の空白を除く
 _env_trim() {
@@ -126,15 +129,32 @@ env_print_source() {
     fi
 }
 
+# 秘密値を表示用に整形する: env_secret <値>
+#   既定は「****（文字数）」．ENV_SHOW_SECRETS=1（config --show-secrets）のときだけ平文
+#   端末のスクロールバックやログに秘密値を残さないため，start / status の表示もこれを通す
+env_secret() {
+    if [ "$ENV_SHOW_SECRETS" = "1" ]; then
+        printf '%s' "$1"
+    else
+        printf '****（%s文字）' "${#1}"
+    fi
+}
+
 # config サブコマンド: 実際に使われる値と出所を表示する（secret はマスク）
+#   引数に --show-secrets を与えると secret も平文で表示する
 env_print_config() {
+    case "${1:-}" in
+        '') ;;
+        --show-secrets) ENV_SHOW_SECRETS=1 ;;
+        *) echo "使い方: config [--show-secrets]" >&2; exit 1 ;;
+    esac
     env_print_source
     echo "出所: env=シェルの環境変数，file=設定ファイル，default=run.sh の既定値"
     local name value o s
     for name in ${ENV_DECLARED[@]+"${ENV_DECLARED[@]}"}; do
         value="${!name}"
         s="__ENV_SECRET_$name"
-        [ -n "${!s:-}" ] && value="****（${#value}文字）"
+        [ -n "${!s:-}" ] && value="$(env_secret "$value")"
         o="__ENV_ORIGIN_$name"
         printf '  %-28s %-10s %s\n' "$name" "[${!o}]" "$value"
     done
@@ -153,4 +173,7 @@ env_print_config() {
             2) echo "  参考: $key は compose.yaml 専用（run.sh では使わない）" ;;
         esac
     done
+    if [ "$ENV_SHOW_SECRETS" != "1" ]; then
+        echo "（秘密値を平文で見るには: $0 config --show-secrets）"
+    fi
 }

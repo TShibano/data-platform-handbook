@@ -4,8 +4,8 @@
       "name": "handbook_admin",
       "credentials": [
         {
-          "accessKey": "handbook-access-key",
-          "secretKey": "handbook-secret-key-change-me"
+          "accessKey": "${SEAWEEDFS_S3_ACCESS_KEY}",
+          "secretKey": "${SEAWEEDFS_S3_SECRET_KEY}"
         }
       ],
       "actions": ["Admin", "Read", "List", "Tagging", "Write"]

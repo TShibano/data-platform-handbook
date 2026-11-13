@@ -1,10 +1,11 @@
 # Garage v2 の単一ノード用設定
 # 公式 Quick Start の設定をもとに，データの永続化先を /var/lib/garage に変更している．
 # バインド先は公式例の [::] ではなく，Podman (macOS) で動作実績のある 0.0.0.0 にしている．
-# rpc_secret と admin_token はローカル検証用の固定値．共有環境では必ず再生成する
-#   rpc_secret:  openssl rand -hex 32
-#   admin_token: openssl rand -base64 32
-# 環境変数 GARAGE_RPC_SECRET / GARAGE_ADMIN_TOKEN でも上書きできる．
+#
+# 秘密値（rpc_secret / admin_token）はこのファイルに書かない．run.sh / compose.yaml が
+# .env の GARAGE_RPC_SECRET / GARAGE_ADMIN_TOKEN を同名の環境変数としてコンテナに渡し，
+# Garage がそれを rpc_secret / admin.admin_token として使う（v0.8.2 以降の公式機能）．
+# 既定値と変更方法は .env.example を参照．
 
 metadata_dir = "/var/lib/garage/meta"
 data_dir     = "/var/lib/garage/data"
@@ -15,7 +16,7 @@ replication_factor = 1
 
 rpc_bind_addr   = "0.0.0.0:3901"
 rpc_public_addr = "127.0.0.1:3901"
-rpc_secret      = "00ba16efd7193aa76afe0514a5e67ecfb902937a9f2b390c6c6da821385307cb"
+# rpc_secret は環境変数 GARAGE_RPC_SECRET で与える
 
 [s3_api]
 s3_region     = "garage"
@@ -29,4 +30,5 @@ index       = "index.html"
 
 [admin]
 api_bind_addr = "0.0.0.0:3903"
-admin_token   = "handbook-admin-token-change-me"
+# admin_token は環境変数 GARAGE_ADMIN_TOKEN で与える．
+# metrics_token は未設定（/metrics は認証なしで読める．Garage の既定動作）
