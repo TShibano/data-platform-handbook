@@ -1,23 +1,37 @@
 #!/usr/bin/env bash
 # SeaweedFS を weed mini（全コンポーネントを1プロセスに同梱）で起動・停止する
-# 使い方: ./run.sh {start|stop|status|logs|purge}
-#   CONTAINER_RUNTIME=docker ./run.sh start のようにランタイムを切り替えられる（既定は podman）
+# 使い方: ./run.sh {start|stop|status|logs|purge|config}
+#   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
+#   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
+#   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/../lib/env.sh"
+env_load "$SCRIPT_DIR"
 
-RUNTIME="${CONTAINER_RUNTIME:-podman}"
+# 既定値は .env.example と compose.yaml に揃える
+env_var CONTAINER_RUNTIME podman
+env_var SEAWEEDFS_IMAGE docker.io/chrislusf/seaweedfs:4.53
+env_var SEAWEEDFS_S3_PORT 8333
+env_var SEAWEEDFS_ADMIN_PORT 12535
+env_var SEAWEEDFS_MASTER_PORT 9333
+env_var SEAWEEDFS_FILER_PORT 8888
+# 管理UIはパスワード未設定だとコンテナ内の 127.0.0.1 にしかバインドされないため必ず指定する
+env_var SEAWEEDFS_ADMIN_PASSWORD admin secret
+# S3 の認証情報は s3.json で定義する（相対パスはこのディレクトリ基準．run.sh のみ）
+env_var SEAWEEDFS_S3_CONFIG ./s3.json
+
+RUNTIME="$CONTAINER_RUNTIME"
 NAME="handbook-seaweedfs"
 VOLUME="${NAME}-data"
-IMAGE="${SEAWEEDFS_IMAGE:-docker.io/chrislusf/seaweedfs:4.53}"
-S3_PORT="${SEAWEEDFS_S3_PORT:-8333}"
-ADMIN_PORT="${SEAWEEDFS_ADMIN_PORT:-12535}"
-MASTER_PORT="${SEAWEEDFS_MASTER_PORT:-9333}"
-FILER_PORT="${SEAWEEDFS_FILER_PORT:-8888}"
-# 管理UIはパスワード未設定だとコンテナ内の 127.0.0.1 にしかバインドされないため必ず指定する
-ADMIN_PASSWORD="${SEAWEEDFS_ADMIN_PASSWORD:-admin}"
-# S3 の認証情報は s3.json で定義する
-S3_CONFIG="${SEAWEEDFS_S3_CONFIG:-$SCRIPT_DIR/s3.json}"
+IMAGE="$SEAWEEDFS_IMAGE"
+S3_PORT="$SEAWEEDFS_S3_PORT"
+ADMIN_PORT="$SEAWEEDFS_ADMIN_PORT"
+MASTER_PORT="$SEAWEEDFS_MASTER_PORT"
+FILER_PORT="$SEAWEEDFS_FILER_PORT"
+ADMIN_PASSWORD="$SEAWEEDFS_ADMIN_PASSWORD"
+S3_CONFIG="$(env_abs_path "$SEAWEEDFS_S3_CONFIG" "$SCRIPT_DIR")"
 
 container_exists() { "$RUNTIME" container inspect "$NAME" >/dev/null 2>&1; }
 container_running() {
@@ -43,6 +57,7 @@ print_info() {
 }
 
 cmd_start() {
+    env_print_source
     if container_running; then
         echo "$NAME は起動済み"
         print_info
@@ -111,5 +126,6 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) cmd_logs ;;
     purge) cmd_purge ;;
-    *) echo "使い方: $0 {start|stop|status|logs|purge}" >&2; exit 1 ;;
+    config) env_print_config ;;
+    *) echo "使い方: $0 {start|stop|status|logs|purge|config}" >&2; exit 1 ;;
 esac

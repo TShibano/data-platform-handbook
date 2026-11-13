@@ -16,7 +16,7 @@
 AIStor の起動にはライセンスが必要．
 
 1. https://www.min.io/pricing の Free tier で「Get Started」からライセンスを取得する
-2. ダウンロードしたファイルをこのディレクトリに `minio.license` として置く（別の場所なら `AISTOR_LICENSE_FILE` で指定）
+2. ダウンロードしたファイルをこのディレクトリに `minio.license` として置く（別の場所なら `.env` の `AISTOR_LICENSE_FILE` で指定）
 
 `minio.license` は個人に紐づく情報なので，リポジトリにはコミットしない（`../.gitignore` で除外している）．
 
@@ -24,21 +24,22 @@ AIStor の起動にはライセンスが必要．
 
 ## 起動
 
+設定は `.env` で与える（[../README.md の「設定方法（.env）」](../README.md#設定方法env)）．`.env` が無ければ既定値で起動する．
+
+```bash
+cp .env.example .env        # 必要な行だけ編集する
+./run.sh config             # 実際に使われる値を確認する
+```
+
 ```bash
 # compose（minio.license が必要）
 podman compose up -d        # または docker compose up -d
 
 # スクリプト
-./run.sh start              # docker を使う場合: CONTAINER_RUNTIME=docker ./run.sh start
+./run.sh start              # docker を使う場合は .env に CONTAINER_RUNTIME=docker
 ```
 
-| 変数 | 既定値 |
-|---|---|
-| `AISTOR_IMAGE` | `quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z` |
-| `AISTOR_LICENSE_FILE` | `./minio.license` |
-| `AISTOR_S3_PORT` | `9010` |
-| `AISTOR_CONSOLE_PORT` | `9011` |
-| `AISTOR_ROOT_USER` / `AISTOR_ROOT_PASSWORD` | `minioadmin` / `minioadmin` |
+設定できる変数（イメージ，ライセンスファイルのパス，ポート，認証情報）と既定値は [.env.example](.env.example) を参照．`AISTOR_LICENSE_FILE` の相対パスは run.sh / compose ともこのディレクトリ基準で解決する．
 
 起動コマンドは公式手順どおり `minio server /mnt/data --license /minio.license`．
 

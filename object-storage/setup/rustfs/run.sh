@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
 # RustFS を単一ノードで起動・停止する
-# 使い方: ./run.sh {start|stop|status|logs|purge}
-#   CONTAINER_RUNTIME=docker ./run.sh start のようにランタイムを切り替えられる（既定は podman）
+# 使い方: ./run.sh {start|stop|status|logs|purge|config}
+#   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
+#   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
+#   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
 set -euo pipefail
 
-RUNTIME="${CONTAINER_RUNTIME:-podman}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/../lib/env.sh"
+env_load "$SCRIPT_DIR"
+
+# 既定値は .env.example と compose.yaml に揃える
+env_var CONTAINER_RUNTIME podman
+env_var RUSTFS_IMAGE docker.io/rustfs/rustfs:1.0.5
+env_var RUSTFS_S3_PORT 9020
+env_var RUSTFS_CONSOLE_PORT 9021
+# rustfsadmin は既知の値．localhost 以外へ公開する場合は必ず上書きする
+env_var RUSTFS_ACCESS_KEY rustfsadmin
+env_var RUSTFS_SECRET_KEY rustfsadmin secret
+
+RUNTIME="$CONTAINER_RUNTIME"
 NAME="handbook-rustfs"
 VOLUME="${NAME}-data"
-IMAGE="${RUSTFS_IMAGE:-docker.io/rustfs/rustfs:1.0.5}"
-S3_PORT="${RUSTFS_S3_PORT:-9020}"
-CONSOLE_PORT="${RUSTFS_CONSOLE_PORT:-9021}"
-# rustfsadmin は既知の値．localhost 以外へ公開する場合は必ず上書きする
-ACCESS_KEY="${RUSTFS_ACCESS_KEY:-rustfsadmin}"
-SECRET_KEY="${RUSTFS_SECRET_KEY:-rustfsadmin}"
+IMAGE="$RUSTFS_IMAGE"
+S3_PORT="$RUSTFS_S3_PORT"
+CONSOLE_PORT="$RUSTFS_CONSOLE_PORT"
+ACCESS_KEY="$RUSTFS_ACCESS_KEY"
+SECRET_KEY="$RUSTFS_SECRET_KEY"
 
 container_exists() { "$RUNTIME" container inspect "$NAME" >/dev/null 2>&1; }
 container_running() {
@@ -37,6 +51,7 @@ print_info() {
 }
 
 cmd_start() {
+    env_print_source
     if container_running; then
         echo "$NAME は起動済み"
         print_info
@@ -102,5 +117,6 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) cmd_logs ;;
     purge) cmd_purge ;;
-    *) echo "使い方: $0 {start|stop|status|logs|purge}" >&2; exit 1 ;;
+    config) env_print_config ;;
+    *) echo "使い方: $0 {start|stop|status|logs|purge|config}" >&2; exit 1 ;;
 esac
