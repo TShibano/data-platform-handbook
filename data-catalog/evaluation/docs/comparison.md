@@ -10,9 +10,11 @@
 
 再現手順はこのドキュメントには書かない．各スクリプトを参照すること．
 
-- サンプル DB: `examples/postgres/scripts/up.sh` / `down.sh`
-- OpenMetadata: `openmetadata/scripts/up.sh` / `ingest.sh` / `down.sh` / `status.sh` / `logs.sh`
-- DataHub: `datahub/scripts/up.sh` / `ingest.sh` / `down.sh` / `status.sh` / `logs.sh`
+- サンプル DB: `setup/sample-db/run.sh`
+- OpenMetadata: `setup/openmetadata/run.sh`（`start` / `ingest` / `stop` / `status` / `logs`）
+- DataHub: `setup/datahub/run.sh`（同上）
+
+注: 本文中のファイルパス・スクリプト名（`up.sh`，`scripts/lib.sh`，`examples/` など）は検証当時の構成のもの．2026-11 に `setup/` へ再配置し `run.sh` に書き換えた後の対応は [../README.md](../README.md) を参照．
 
 ## 観点表
 

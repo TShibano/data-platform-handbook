@@ -1,5 +1,7 @@
 # 実装計画: OpenMetadata / DataHub の Podman 環境構築
 
+> 注: この計画は 2026-11 の再配置前に書いたもので，パスは当時の構成（`openmetadata/scripts/up.sh`，`shared/scripts/`，`examples/` など）のまま．現在の対応は [../README.md](../README.md) を参照．
+
 作成日: 2026-09-05
 最終更新: 2026-09-05（8 章: OpenMetadata のインジェスト範囲の修正計画を追記）
 対象: Containerfile・Compose 定義・補助スクリプトの整備

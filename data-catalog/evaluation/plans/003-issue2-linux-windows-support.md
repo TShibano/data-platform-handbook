@@ -1,5 +1,7 @@
 # 実装計画: Linux / Windows 対応（Issue #2）
 
+> 注: この計画は 2026-11 の再配置前に書いたもので，パスは当時の構成（`openmetadata/scripts/up.sh`，`shared/scripts/`，`examples/` など）のまま．現在の対応は [../README.md](../README.md) を参照．
+
 作成日: 2026-09-07
 対象: Issue #2「feat: Linux/Windows対応」
 状態: **実装中**．4 章のステップ 1〜4 を feat/linux-windows-support で実装した．
