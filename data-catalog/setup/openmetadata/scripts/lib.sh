@@ -12,10 +12,10 @@ OM_UPSTREAM_COMPOSE="${OM_DIR}/compose.upstream.yml"
 OM_OVERRIDE_COMPOSE="${OM_DIR}/compose.override.yml"
 OM_ALTPORTS_COMPOSE="${OM_DIR}/compose.altports.yml"
 
-# shellcheck source=../../shared/scripts/common.sh
-source "${OM_SCRIPT_DIR}/../../shared/scripts/common.sh"
-# shellcheck source=../../shared/scripts/versions.env
-source "${OM_SCRIPT_DIR}/../../shared/scripts/versions.env"
+# shellcheck source=../../lib/common.sh
+source "${OM_SCRIPT_DIR}/../../lib/common.sh"
+# shellcheck source=../../lib/versions.env
+source "${OM_SCRIPT_DIR}/../../lib/versions.env"
 
 # compose に渡す -f 引数を組み立て，グローバル配列 OM_COMPOSE_FILES に入れる．
 # OM_ALT_PORTS=1 のときだけ compose.altports.yml（DataHub と同時起動する際の
@@ -34,6 +34,6 @@ om_compose_files() {
 ensure_upstream_compose() {
   if [ ! -f "${OM_UPSTREAM_COMPOSE}" ]; then
     log_info "compose.upstream.yml が無いので取得する．"
-    "${OM_SCRIPT_DIR}/../../shared/scripts/fetch-compose.sh" openmetadata
+    "${OM_SCRIPT_DIR}/../../lib/fetch-compose.sh" openmetadata
   fi
 }

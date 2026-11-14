@@ -10,8 +10,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib.sh
 source "${SCRIPT_DIR}/lib.sh"
-# shellcheck source=../../shared/scripts/preflight.sh
-source "${SCRIPT_DIR}/../../shared/scripts/preflight.sh"
+# shellcheck source=../../lib/preflight.sh
+source "${SCRIPT_DIR}/../../lib/preflight.sh"
 
 # 前提チェック（podman / compose provider / 依存コマンド / メモリ・ディスク）．
 # machine の有無は preflight 側で判定するため，ここは OS を意識しない．

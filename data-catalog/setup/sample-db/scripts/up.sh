@@ -9,10 +9,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# shellcheck source=../../../shared/scripts/common.sh
-source "${SCRIPT_DIR}/../../../shared/scripts/common.sh"
-# shellcheck source=../../../shared/scripts/preflight.sh
-source "${SCRIPT_DIR}/../../../shared/scripts/preflight.sh"
+# shellcheck source=../../lib/common.sh
+source "${SCRIPT_DIR}/../../lib/common.sh"
+# shellcheck source=../../lib/preflight.sh
+source "${SCRIPT_DIR}/../../lib/preflight.sh"
 
 CONTAINER_NAME="sample_postgres"
 DB_USER="sample_user"
@@ -24,7 +24,7 @@ preflight 2048 2
 cd "${PG_DIR}"
 
 log_info "サンプル DB (postgres) を起動する．"
-if ! "${COMPOSE_CMD[@]}" -f compose.yml up -d; then
+if ! "${COMPOSE_CMD[@]}" -f compose.yaml up -d; then
   log_error "compose up に失敗した．"
   exit 1
 fi
