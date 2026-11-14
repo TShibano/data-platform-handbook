@@ -141,6 +141,12 @@ print_info() {
     fi
 }
 
+# start はスタックを起動するだけでサンプル DB は取り込まないため，次の手順を案内する
+print_next_steps() {
+    echo "次の手順: サンプル DB を取り込むには $0 ingest"
+    echo "  （サンプル DB が未起動なら先に $(cd "$SCRIPT_DIR/../sample-db" && pwd)/run.sh start）"
+}
+
 cmd_start() {
     env_print_source
     # 前提チェック（podman / compose provider / 依存コマンド / メモリ・ディスク）
@@ -161,6 +167,7 @@ cmd_start() {
     if wait_http "$UI_URL" "$DATAHUB_START_TIMEOUT" 5; then
         log_info "DataHub が起動した．"
         print_info
+        print_next_steps
     else
         log_error "$UI_URL がタイムアウトまでに応答しなかった．"
         log_error "状態確認: $0 status"
