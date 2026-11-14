@@ -1,9 +1,9 @@
 # データカタログツールの起動手順
 
-データカタログツール2製品（OpenMetadata / DataHub）と，インジェスト対象のサンプル DB を，Podman 上のローカル環境で起動するための設定とスクリプトをまとめる．
+データカタログツール2製品（OpenMetadata / DataHub）と，インジェスト対象のサンプル DB（PostgreSQL）・サンプル S3（MinIO 上の parquet）を，Podman 上のローカル環境で起動するための設定とスクリプトをまとめる．
 各ディレクトリの `run.sh` で起動・停止・インジェストを行い，起動設定は `.env` で与える．
 
-- 動作実績: 2026-09-05 に macOS（Apple Silicon，podman machine）で両ツールの起動・インジェスト・API 検証をした（結果は [../evaluation/docs/comparison.md](../evaluation/docs/comparison.md)）．その後 `run.sh` と `.env` の方式へ書き換えたが，書き換え後に実起動まで確認したのはサンプル DB だけで，両ツールは compose の解決結果（`compose config`）までの確認に留まる（2026-11-14）
+- 動作実績: 2026-09-05 に macOS（Apple Silicon，podman machine）で両ツールの起動・インジェスト・API 検証をした（結果は [../evaluation/docs/comparison.md](../evaluation/docs/comparison.md)）．`run.sh` と `.env` の方式へ書き換えた後，2026-11-14 に両ツールで `start` と `ingest`（sample-db / sample-s3）が通ることを確認した
 - 両ツールはポートとメモリを取り合うため，同時には起動しない（[同時起動](#同時起動)）
 - object-storage の各製品とはホストポートが重ならない
 
@@ -14,6 +14,7 @@
 | [OpenMetadata](openmetadata/) | Apache-2.0 | 2.0.1（`docker.io/openmetadata/*:2.0.1`） | 8585 | `admin@open-metadata.org` / `admin` | 6GB | 5（mysql，elasticsearch，マイグレーション，server，ingestion=Airflow） |
 | [DataHub](datahub/) | Apache-2.0 | 1.7.0（`acryldata/*:v1.7.0`） | 9002 | `datahub` / `datahub` | 8GB | 7（mysql，opensearch，kafka，system-update，gms，frontend，actions） |
 | [サンプル DB](sample-db/) | PostgreSQL License | `docker.io/library/postgres:16-alpine` | - | `sample_user` / `sample_password`（検証用固定値） | 2GB | 1 |
+| [サンプル S3](sample-s3/) | AGPL-3.0（MinIO） | `localhost/handbook-minio:RELEASE.2025-10-15T17-29-55Z`（object-storage の Dockerfile でビルド） | 9101（コンソール） | `sample_s3_user` / `sample_s3_password`（検証用固定値） | 1GB | 1 |
 
 機能面の比較は [../evaluation/docs/comparison.md](../evaluation/docs/comparison.md) にまとめている．
 
@@ -24,6 +25,7 @@
 | OpenMetadata | 8585（UI / API），8586（管理），3306（mysql），9200 / 9300（elasticsearch），8080（ingestion=Airflow） |
 | DataHub | 9002（UI），8080（GMS），4319，3306（mysql），9200（opensearch），9092（kafka） |
 | サンプル DB | 5432 |
+| サンプル S3 | 9100（S3 API），9101（コンソール） |
 
 OpenMetadata と DataHub は 3306 / 9200 / 8080 が衝突する．ポート番号は `.env` では変えられない（各 `compose.override.yml` の `ports: !override` にリテラルで書いてある．podman-compose 1.6.0 が `!override` タグの中の `${VAR}` を展開しないため）．
 
@@ -45,7 +47,8 @@ setup/
 │   ├── Containerfile.ingestion # インジェスト用の拡張イメージ（公式イメージを FROM）
 │   └── configs/                # インジェスト定義
 ├── datahub/                # openmetadata/ と同じ形
-└── sample-db/              # インジェスト対象の PostgreSQL（compose.yaml・初期化 SQL）
+├── sample-db/              # インジェスト対象の PostgreSQL（compose.yaml・初期化 SQL）
+└── sample-s3/              # インジェスト対象の MinIO（compose.yaml・parquet 生成・OpenMetadata 用マニフェスト）
 ```
 
 スタックの起動は compose が担い，`run.sh` はその薄いラッパーにしている．object-storage と違い，両ツールは複数サービスの構成で `docker run` 相当を書くのは現実的でないため．Containerfile は公式イメージを `FROM` する拡張レイヤ（インジェスト用）に専念させる．
@@ -90,14 +93,16 @@ cgroup v2 の環境を推奨する．
 
 ## 起動・停止
 
-典型的な流れは「サンプル DB 起動 → 比較したいツールを起動 → インジェスト → 確認 → 停止」．
+典型的な流れは「サンプルデータ（DB / S3）起動 → 比較したいツールを起動 → インジェスト → 確認 → 停止」．
 
 ```bash
 ./sample-db/run.sh start        # インジェスト対象の DB．どちらのツールを試す場合も先に起動する
+./sample-s3/run.sh start        # インジェスト対象の S3（MinIO + parquet）．データレイクを試す場合に起動する
 
 cd openmetadata                 # DataHub なら cd datahub
 ./run.sh start                  # 起動し，UI が応答するまで待つ（初回は数分）
-./run.sh ingest                 # サンプル DB を取り込み，検索・リネージ API で結果を検証する
+./run.sh ingest                 # 起動しているサンプルデータをすべて取り込み，API で結果を検証する
+./run.sh ingest sample-s3       # 対象を指定して取り込む（sample-db / sample-s3）
 ./run.sh status                 # コンテナのヘルスと UI / API への到達を確認する
 ./run.sh logs [service...]      # ログを追う（省略時は全サービス）
 ./run.sh config                 # 実際に使われる設定値と出所を表示する（秘密値はマスク）
@@ -107,7 +112,7 @@ cd openmetadata                 # DataHub なら cd datahub
 ./run.sh fetch-compose [--force]  # compose.upstream.yml を公式から取り直す（バージョンを上げるとき）
 ```
 
-サンプル DB の `run.sh` は `start|stop|status|logs|purge|config` のみ．`podman compose up -d` でも起動できる（`.env` も読む）．
+サンプル DB の `run.sh` は `start|stop|status|logs|purge|config` のみ．サンプル S3 はこれに `load`（データの作り直し）が加わる．どちらも `podman compose up -d` でも起動できる（`.env` も読む．ただしサンプル S3 のデータ投入は `run.sh` だけが行う）．
 
 OpenMetadata / DataHub は compose ファイルを3枚重ねて起動するため，compose を直接使わず `run.sh` 経由で操作する．
 
@@ -148,8 +153,9 @@ data-catalog 固有の点は，`run.sh` が compose のラッパーであるこ�
 | OpenMetadata | `OM_ADMIN_EMAIL` / `OM_ADMIN_PASSWORD` | `run.sh ingest` が ingestion-bot の JWT を取るためのログイン（サーバの初期値を変えるものではない） | `admin@open-metadata.org` / `admin` |
 | DataHub | `DATAHUB_TOKEN_SERVICE_SALT` / `DATAHUB_TOKEN_SERVICE_SIGNING_KEY` | 同名の環境変数で GMS などに渡る | ローカル検証用の固定値 |
 
-サンプル DB の接続情報は各ツールのインジェスト定義（`configs/`）にも同じ値を書いているため，`.env` では変えられない．検証用の固定値で秘密ではない．
+サンプル DB・サンプル S3 の接続情報は各ツールのインジェスト定義（`configs/`）にも同じ値を書いているため，`.env` では変えられない．検証用の固定値で秘密ではない．
 
-## サンプル DB
+## サンプルデータ
 
-スキーマ・データの内容と，この構成にした理由は [sample-db/README.md](sample-db/README.md) を参照．
+- サンプル DB: スキーマ・データの内容と，この構成にした理由は [sample-db/README.md](sample-db/README.md) を参照
+- サンプル S3: メダリオン構成の parquet の内容，OpenMetadata 用マニフェスト（`openmetadata.json`）の書き方，GUI から取り込むときの設定は [sample-s3/README.md](sample-s3/README.md) を参照

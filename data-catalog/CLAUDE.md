@@ -13,7 +13,8 @@ setup/
 ├── lib/                 # env.sh (copy of object-storage/setup/lib/env.sh), common.sh, preflight.sh
 ├── openmetadata/        # run.sh, .env.example, compose.{upstream,override,altports}.yml, Containerfile.ingestion, configs/
 ├── datahub/             # same shape as openmetadata/
-└── sample-db/           # PostgreSQL ingested by both tools: run.sh, .env.example, compose.yaml, sample-data/
+├── sample-db/           # PostgreSQL ingested by both tools: run.sh, .env.example, compose.yaml, sample-data/
+└── sample-s3/           # MinIO + medallion parquet (bronze/silver/gold, dt= partitions): run.sh, compose.yaml, openmetadata.json, generator/
 evaluation/
 ├── docs/comparison.md   # findings (dated 2026-09-05; paths in its body are the pre-2026-11 layout)
 └── plans/               # historical implementation plans (old paths, left as-is)
@@ -25,7 +26,8 @@ Every directory under `setup/` (except `lib/`) is driven by `./run.sh` with sett
 
 ```sh
 ./setup/sample-db/run.sh start
-./setup/openmetadata/run.sh {start|stop|status|logs [svc...]|purge|ingest|fetch-compose [--force]|config [--show-secrets]}
+./setup/sample-s3/run.sh {start|load|stop|status|logs|purge|config}   # load regenerates the parquet files
+./setup/openmetadata/run.sh {start|stop|status|logs [svc...]|purge|ingest [sample-db] [sample-s3]|fetch-compose [--force]|config [--show-secrets]}
 ./setup/datahub/run.sh      # same subcommands
 ./setup/lib/preflight.sh    # prerequisite check (every start runs it)
 ```
@@ -40,6 +42,8 @@ There is no build, lint, or test tooling; `start` / `status` / `ingest` embed th
 - `run.sh` is a thin compose wrapper. Compose variables it owns are declared with `env_var` and `export`ed (shell env beats `--env-file`); the loaded `.env` is also passed via `--env-file` so other upstream variables work.
 - Ports cannot come from `.env`: podman-compose 1.6.0 does not expand `${VAR}` inside `!override` tags, so ports are literals in the override files.
 - Keep `.env.example`, `run.sh` defaults, and `Containerfile.ingestion` versions in sync when bumping a tool version.
-- Sample DB connection values are fixed (also hard-coded in each tool's `configs/`), not secrets.
+- Sample DB / sample S3 connection values (ports 5432 / 9100, credentials, bucket `sample-lake`) are fixed and also hard-coded in each tool's `configs/`; they are not secrets.
+- Sample data is deterministic (no randomness) so ingestion results are reproducible.
+- `setup/sample-s3` reuses `../object-storage/setup/minio/Dockerfile` (image `localhost/handbook-minio:<tag>`); OpenMetadata needs the bucket-root `openmetadata.json` manifest, DataHub uses `path_specs` instead.
 - `setup/lib/env.sh` must stay identical to `../object-storage/setup/lib/env.sh` apart from its header note.
 - Findings go in `evaluation/docs/comparison.md`, not scattered across other docs.
