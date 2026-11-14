@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# DataHub のスタックを起動・停止し，サンプル DB をインジェストする
-# 使い方: ./run.sh {start|stop|status|logs [service...]|purge|ingest|fetch-compose [--force]|config [--show-secrets]}
+# DataHub のスタックを起動・停止し，サンプル DB / サンプル S3 をインジェストする
+# 使い方: ./run.sh {start|stop|status|logs [service...]|purge|ingest [sample-db] [sample-s3]|fetch-compose [--force]|config [--show-secrets]}
 #   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
 #   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
 #   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
@@ -41,7 +41,8 @@ UI_PORT=9002
 REQUIRED_MEM_MIB=8192
 REQUIRED_DISK_GB=13
 INGESTION_IMAGE_TAG="dh-ingestion:local"
-RECIPE_NAME="postgres_to_datahub.yml"
+# サンプル S3（../sample-s3）の S3 API ポート．configs/recipes/s3_to_datahub.yml にも同じ値を書いている
+SAMPLE_S3_PORT=9100
 UPSTREAM_COMPOSE="$SCRIPT_DIR/compose.upstream.yml"
 
 case "$DATAHUB_ALT_PORTS" in
@@ -141,10 +142,11 @@ print_info() {
     fi
 }
 
-# start はスタックを起動するだけでサンプル DB は取り込まないため，次の手順を案内する
+# start はスタックを起動するだけでサンプルデータは取り込まないため，次の手順を案内する
 print_next_steps() {
-    echo "次の手順: サンプル DB を取り込むには $0 ingest"
-    echo "  （サンプル DB が未起動なら先に $(cd "$SCRIPT_DIR/../sample-db" && pwd)/run.sh start）"
+    echo "次の手順: サンプル DB / サンプル S3 を取り込むには $0 ingest（起動しているものをすべて取り込む）"
+    echo "  （未起動なら先に $(cd "$SCRIPT_DIR/../sample-db" && pwd)/run.sh start"
+    echo "              / $(cd "$SCRIPT_DIR/../sample-s3" && pwd)/run.sh start）"
 }
 
 cmd_start() {
@@ -257,67 +259,44 @@ cmd_logs() {
     compose logs -f "$@"
 }
 
-# サンプル DB (../sample-db) を DataHub へインジェストし，結果を API で検証する．
-# 1. Containerfile.ingestion をビルド
-# 2. recipe (configs/recipes/postgres_to_datahub.yml) でインジェストを実行
-# 3. GMS の API で結果（検索・リネージ）を検証
-# 前提: このスタックと ../sample-db の両方が起動していること．
+# 取り込み対象（ingest の引数）．引数なしなら，起動しているものをすべて取り込む
+INGEST_TARGETS_ALL=(sample-db sample-s3)
+
+sample_db_ready() {
+    podman exec sample_postgres psql -U sample_user -d sampledb -c 'SELECT 1;' >/dev/null 2>&1
+}
+
+sample_s3_ready() {
+    curl -fsS -o /dev/null "http://localhost:${SAMPLE_S3_PORT}/minio/health/live" 2>/dev/null
+}
+
+# configs/recipes/<recipe> の GMS ポートを埋め込んだ一時コピーを作り，インジェスト用イメージで実行する．
+# recipe はどのポートでも動くよう REPLACE_WITH_GMS_PORT というプレースホルダのままコミットしている．
+# 実際のポート（既定 8080 / DATAHUB_ALT_PORTS=1 なら 28080）は起動設定で決まるため，
+# ここで一時ファイルへ sed 置換してからマウントする（OpenMetadata 側で jwtToken を埋め込むのと同じ方式）．
 #
-# OpenMetadata と異なり，DataHub の quickstart GMS は既定で認証を要求しない
-# （ローカル検証環境のため未認証で到達できる）．そのため JWT 等のトークン取得は不要．
-cmd_ingest() {
-    require_podman
-
-    # Linux ネイティブ向けの補正．SELinux enforcing なら bind mount を再ラベルし，
-    # host.containers.internal が未定義な環境では --add-host で補う．
-    # machine モード（macOS 等）ではどちらも空になる．
-    local mount_suffix
-    mount_suffix="$(selinux_mount_suffix)"
-    container_host_args
-
-    # --- 0. 前提の到達確認 ---
-    log_info "DataHub GMS への到達を確認する．"
-    if ! curl -fsS -o /dev/null "${GMS_URL}/health"; then
-        die "DataHub GMS (${GMS_URL}) に到達できない．先に $0 start を実行すること（DATAHUB_ALT_PORTS は start 時と揃える）．"
-    fi
-
-    log_info "サンプル DB (postgres) への到達を確認する．"
-    if ! podman exec sample_postgres psql -U sample_user -d sampledb -c 'SELECT 1;' >/dev/null 2>&1; then
-        die "サンプル DB に到達できない．先に ../sample-db/run.sh start を実行すること．"
-    fi
-
-    # --- 1. イメージビルド ---
-    # ビルドコンテキストはこのディレクトリ（Containerfile が configs/ を COPY する）
-    log_info "Containerfile.ingestion をビルドする．"
-    podman build -f "$SCRIPT_DIR/Containerfile.ingestion" -t "$INGESTION_IMAGE_TAG" "$SCRIPT_DIR"
-
-    # --- 2. recipe の一時コピーに GMS ポートを埋め込む ---
-    # configs/recipes/${RECIPE_NAME} はどのポートでも動くよう REPLACE_WITH_GMS_PORT
-    # というプレースホルダのままコミットしている．実際のポート（既定 8080 /
-    # DATAHUB_ALT_PORTS=1 なら 28080）は起動設定で決まるため，ここで
-    # 一時ファイルへ sed 置換してからマウントする
-    # （OpenMetadata 側で jwtToken を埋め込むのと同じ方式）．
-    TMP_DIR="$(mktemp -d)"
-    trap 'rm -rf "$TMP_DIR"' EXIT
+# DATAHUB_TELEMETRY_ENABLED=false: acryl-datahub は既定で終了時に利用統計を
+# track.datahubproject.io へ送ろうとし，このホストがサンドボックスから
+# 到達できないため接続タイムアウトのリトライで無駄に待たされる
+# （実機で確認済み）．検証環境として外部送信も避けたいので無効化する．
+run_ingestion() {
+    local recipe="$1"
     sed "s#REPLACE_WITH_GMS_PORT#${GMS_PORT}#" \
-        "$SCRIPT_DIR/configs/recipes/${RECIPE_NAME}" > "$TMP_DIR/${RECIPE_NAME}"
-    chmod 600 "$TMP_DIR/${RECIPE_NAME}"
-
-    # --- 3. インジェスト実行 ---
-    # DATAHUB_TELEMETRY_ENABLED=false: acryl-datahub は既定で終了時に利用統計を
-    # track.datahubproject.io へ送ろうとし，このホストがサンドボックスから
-    # 到達できないため接続タイムアウトのリトライで無駄に待たされる
-    # （実機で確認済み）．検証環境として外部送信も避けたいので無効化する．
-    log_info "recipe (${RECIPE_NAME}, GMS ポート ${GMS_PORT}) でインジェストを実行する．"
-    if ! podman run --rm \
+        "$SCRIPT_DIR/configs/recipes/${recipe}" > "$TMP_DIR/${recipe}"
+    chmod 600 "$TMP_DIR/${recipe}"
+    podman run --rm \
         ${CONTAINER_HOST_ARGS[@]+"${CONTAINER_HOST_ARGS[@]}"} \
         -e DATAHUB_TELEMETRY_ENABLED=false \
-        -v "$TMP_DIR/${RECIPE_NAME}:/opt/ingestion/configs/recipes/${RECIPE_NAME}:ro${mount_suffix}" \
-        "$INGESTION_IMAGE_TAG" ingest -c "/opt/ingestion/configs/recipes/${RECIPE_NAME}"; then
-        die "インジェストに失敗した．"
-    fi
+        -v "$TMP_DIR/${recipe}:/opt/ingestion/configs/recipes/${recipe}:ro${MOUNT_SUFFIX}" \
+        "$INGESTION_IMAGE_TAG" ingest -c "/opt/ingestion/configs/recipes/${recipe}"
+}
 
-    # --- 4. API で結果を検証する ---
+# サンプル DB (../sample-db) をインジェストし，結果を API で検証する．
+ingest_sample_db() {
+    log_info "[sample-db] recipe (postgres_to_datahub.yml, GMS ポート ${GMS_PORT}) でインジェストを実行する．"
+    run_ingestion postgres_to_datahub.yml || die "インジェストに失敗した．"
+
+    # --- API で結果を検証する ---
     log_info "検索 API で customers データセットがヒットするか確認する．"
     local search_ok=0 search_result hit_count search_pretty
     for _ in 1 2 3 4 5; do
@@ -358,7 +337,95 @@ cmd_ingest() {
     fi
     log_info "customer_order_summary の上流に ${upstream_count} 件のデータセットを確認した．"
 
-    log_info "インジェストと検証が完了した．"
+    log_info "サンプル DB のインジェストと検証が完了した．"
+}
+
+
+# サンプル S3 (../sample-s3) をインジェストし，結果を API で検証する．
+# どのパスを 1 データセットにするかは recipe の path_specs で決める（openmetadata.json は使わない）．
+ingest_sample_s3() {
+    log_info "[sample-s3] recipe (s3_to_datahub.yml, GMS ポート ${GMS_PORT}) でインジェストを実行する．"
+    run_ingestion s3_to_datahub.yml || die "S3 のインジェストに失敗した．"
+
+    # 期待値: 3 層のテーブルがそれぞれ 1 データセットになり（URN はパスから作られる），
+    # 各データセットの schemaMetadata に parquet の列が入っている．
+    log_info "[sample-s3] 登録されたデータセットのスキーマを確認する．"
+    local table urn urn_enc result ng=0
+    for table in "bronze/orders:order_id" "silver/orders:amount" "gold/daily_sales:total_amount"; do
+        urn="urn:li:dataset:(urn:li:dataPlatform:s3,sample-lake/${table%%:*},PROD)"
+        urn_enc="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$urn")"
+        if ! result="$(curl -fsS "${GMS_URL}/aspects/${urn_enc}?aspect=schemaMetadata&version=0")"; then
+            log_error "  ${urn}: schemaMetadata が取れない（データセットが無い）"
+            ng=1
+            continue
+        fi
+        # 列名の一覧を出し，その層に固有の列（${table#*:}）が含まれるかを見る
+        if ! printf '%s' "$result" | python3 -c '
+import json, sys
+fields = [f["fieldPath"].split(".")[-1] for f in json.load(sys.stdin)["aspect"]["com.linkedin.schema.SchemaMetadata"]["fields"]]
+print("  " + sys.argv[1] + ": " + str(len(fields)) + " 列 (" + ", ".join(fields) + ")")
+sys.exit(0 if sys.argv[2] in fields else 1)
+' "${table%%:*}" "${table#*:}"; then
+            log_error "  ${table%%:*} に列 ${table#*:} が無い"
+            ng=1
+        fi
+    done
+    [ "$ng" -eq 0 ] || die "S3 の取り込み結果が期待と一致しない．"
+    log_info "サンプル S3 のインジェストと検証が完了した．"
+}
+
+# サンプル DB / サンプル S3 を DataHub へインジェストし，結果を API で検証する．
+# 使い方: ./run.sh ingest [sample-db] [sample-s3]
+#   引数なし: 起動しているものをすべて取り込む（どちらも起動していなければエラー）
+#   引数あり: 指定したものだけ取り込む（起動していなければエラー）
+#
+# OpenMetadata と異なり，DataHub の quickstart GMS は既定で認証を要求しない
+# （ローカル検証環境のため未認証で到達できる）．そのため JWT 等のトークン取得は不要．
+cmd_ingest() {
+    require_podman
+
+    local targets=() t
+    if [ "$#" -eq 0 ]; then
+        sample_db_ready && targets+=(sample-db) || log_warn "サンプル DB が起動していないので取り込まない（../sample-db/run.sh start）．"
+        sample_s3_ready && targets+=(sample-s3) || log_warn "サンプル S3 が起動していないので取り込まない（../sample-s3/run.sh start）．"
+        [ "${#targets[@]}" -gt 0 ] || die "取り込み対象が 1 つも起動していない．../sample-db/run.sh start か ../sample-s3/run.sh start を先に実行すること．"
+    else
+        for t in "$@"; do
+            case "$t" in
+                sample-db) sample_db_ready || die "サンプル DB に到達できない．先に ../sample-db/run.sh start を実行すること．" ;;
+                sample-s3) sample_s3_ready || die "サンプル S3 に到達できない．先に ../sample-s3/run.sh start を実行すること．" ;;
+                *) die "不明な取り込み対象: ${t}（${INGEST_TARGETS_ALL[*]} のいずれか）" ;;
+            esac
+            targets+=("$t")
+        done
+    fi
+    log_info "取り込み対象: ${targets[*]}"
+
+    # Linux ネイティブ向けの補正．SELinux enforcing なら bind mount を再ラベルし，
+    # host.containers.internal が未定義な環境では --add-host で補う．
+    # machine モード（macOS 等）ではどちらも空になる．
+    MOUNT_SUFFIX="$(selinux_mount_suffix)"
+    container_host_args
+
+    log_info "DataHub GMS への到達を確認する．"
+    if ! curl -fsS -o /dev/null "${GMS_URL}/health"; then
+        die "DataHub GMS (${GMS_URL}) に到達できない．先に $0 start を実行すること（DATAHUB_ALT_PORTS は start 時と揃える）．"
+    fi
+
+    # ビルドコンテキストはこのディレクトリ（Containerfile が configs/ を COPY する）
+    log_info "Containerfile.ingestion をビルドする．"
+    podman build -f "$SCRIPT_DIR/Containerfile.ingestion" -t "$INGESTION_IMAGE_TAG" "$SCRIPT_DIR"
+
+    TMP_DIR="$(mktemp -d)"
+    trap 'rm -rf "$TMP_DIR"' EXIT
+
+    for t in "${targets[@]}"; do
+        case "$t" in
+            sample-db) ingest_sample_db ;;
+            sample-s3) ingest_sample_s3 ;;
+        esac
+    done
+    log_info "インジェストと検証がすべて完了した（${targets[*]}）．"
 }
 
 cmd_fetch_compose() {
@@ -377,8 +444,8 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) shift; cmd_logs "$@" ;;
     purge) cmd_purge ;;
-    ingest) cmd_ingest ;;
+    ingest) shift; cmd_ingest "$@" ;;
     fetch-compose) shift; cmd_fetch_compose "$@" ;;
     config) shift; env_print_config "$@" ;;
-    *) echo "使い方: $0 {start|stop|status|logs [service...]|purge|ingest|fetch-compose [--force]|config [--show-secrets]}" >&2; exit 1 ;;
+    *) echo "使い方: $0 {start|stop|status|logs [service...]|purge|ingest [sample-db] [sample-s3]|fetch-compose [--force]|config [--show-secrets]}" >&2; exit 1 ;;
 esac
