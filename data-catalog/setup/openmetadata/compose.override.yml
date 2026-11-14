@@ -16,8 +16,8 @@
 # 再帰対象と見なさず中身を素通りするため）．そのため ports の値は
 # 変数ではなく upstream と同じリテラル値を直接書く．
 # ポートをずらしたい場合（DataHub との同時起動など）は，この override とは別に
-# compose.altports.yml を 3 枚目として重ねる（scripts/lib.sh の
-# om_compose_files() / OM_ALT_PORTS=1 を参照）．
+# compose.altports.yml を 3 枚目として重ねる（.env の OM_ALT_PORTS=1．
+# run.sh の COMPOSE_FILES を参照）．
 
 volumes:
   # upstream は ./docker-volume/db-data への bind mount を使うが，

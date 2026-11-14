@@ -5,7 +5,7 @@
 # このファイル自体はシェルを終了させる副作用のあるトップレベル処理を持たない
 # （関数定義のみ．呼び出されるまで何も実行しない）．
 #
-# 対応環境は macOS / Linux ネイティブ / WSL2（plans/003 の 3.1）．
+# 対応環境は macOS / Linux ネイティブ / WSL2（evaluation/plans/003 の 3.1）．
 # Windows ネイティブ（Git Bash・MSYS2・PowerShell）は対象外．
 
 # --- ログ出力 ---
@@ -41,13 +41,44 @@ die() {
   exit 1
 }
 
-# このファイル（setup/lib/common.sh）の位置から，
-# BASH_SOURCE を使って setup ディレクトリ（1 階層上）を返す．
-# どこから source / 実行されても正しく解決する．
-repo_root() {
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  (cd "${script_dir}/.." && pwd)
+# --- upstream compose の取得 ---
+
+# 公式の compose ファイルを取得して保存する（各 run.sh の fetch-compose から呼ぶ）．
+# 取得したファイルはバイト列を変えずにそのままコミットする方針のため，
+# コメント等の追記は一切行わない．取得元 URL と取得日時はログにのみ出す．
+# 引数1: 取得元 URL，引数2: 保存先パス，引数3: 1 なら既存ファイルがあっても再取得する．
+fetch_upstream_compose() {
+  local url="$1"
+  local dest="$2"
+  local force="${3:-0}"
+  local dest_dir tmp
+
+  if [ -f "${dest}" ] && [ "${force}" != "1" ]; then
+    log_info "${dest} は既に存在するのでスキップする（再取得するなら --force）．"
+    return 0
+  fi
+
+  log_info "取得元: ${url}"
+  log_info "取得先: ${dest}"
+
+  dest_dir="$(dirname "${dest}")"
+  tmp="$(mktemp "${dest_dir}/.compose.upstream.XXXXXX")"
+  if ! curl -fsSL "${url}" -o "${tmp}"; then
+    rm -f "${tmp}"
+    die "ダウンロードに失敗した: ${url}"
+  fi
+  mv "${tmp}" "${dest}"
+  # mktemp が作るファイルは 0600 なので，通常のリポジトリ内ファイルと同じ権限に直す．
+  chmod 644 "${dest}"
+
+  log_info "取得完了: ${dest}（$(wc -c < "${dest}" | tr -d ' ') bytes）"
+  log_info "取得日時: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+}
+
+# compose ファイルが参照している変数名（${VAR} の VAR）を 1 行ずつ出す．
+# run.sh の config で，.env に書いた upstream の変数を「綴り間違い」と誤判定しないために使う．
+compose_file_vars() {
+  grep -o '\${[A-Za-z_][A-Za-z0-9_]*' "$@" 2>/dev/null | sed 's/.*\${//' | sort -u
 }
 
 # --- 実行環境の判定 ---
@@ -305,7 +336,7 @@ _check_machine_disk() {
 
 # ネイティブモード（Linux / WSL2）のメモリ確認．
 # machine と違いホストの物理メモリは増やせないため，不足していても warn に留めて続行する
-# （plans/003 の 3.4）．
+# （evaluation/plans/003 の 3.4）．
 _ensure_native_memory() {
   local required_mem_mib="$1"
 

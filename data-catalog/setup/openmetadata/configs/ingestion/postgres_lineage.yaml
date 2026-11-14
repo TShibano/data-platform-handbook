@@ -1,4 +1,4 @@
-# サンプル DB (examples/postgres) のリネージインジェスト定義．
+# サンプル DB (../sample-db) のリネージインジェスト定義．
 # postgres_metadata.yaml で取り込んだビューの schemaDefinition（view definition SQL）
 # を解析し，table -> view のリネージを生成する．
 #
@@ -7,7 +7,7 @@
 # 先に postgres_metadata.yaml を実行してテーブル・ビューを登録してから，
 # このファイルを実行すること．
 #
-# jwtToken の扱いは postgres_metadata.yaml と同じ（ingest.sh が実行時に埋め込む）．
+# jwtToken の扱いは postgres_metadata.yaml と同じ（./run.sh ingest が実行時に埋め込む）．
 #
 # source.type は "postgres" ではなく "postgres-lineage" にすること．
 # OpenMetadata は service_spec.py の DefaultDatabaseSpec で

@@ -4,7 +4,10 @@
 # ホストの公開ポート（5432）を参照させる方針．
 #
 # DB 名・ユーザ・パスワードは検証用の固定値であり秘密ではない
-# （ローカル検証専用で，外部に公開しない前提）．
+# （ローカル検証専用で，外部に公開しない前提）．各ツールの recipe にも同じ値を
+# 書いているため，.env では変えられないようにしている．
+#
+# ./run.sh start でも podman compose up -d でも起動できる（どちらも .env を読む）．
 
 volumes:
   sample-pg-data:
@@ -12,7 +15,7 @@ volumes:
 services:
   postgres:
     container_name: sample_postgres
-    image: docker.io/library/postgres:16-alpine
+    image: ${SAMPLE_DB_IMAGE:-docker.io/library/postgres:16-alpine}
     restart: "no"
     environment:
       POSTGRES_DB: sampledb

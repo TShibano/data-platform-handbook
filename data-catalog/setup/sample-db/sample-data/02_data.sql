@@ -1,7 +1,7 @@
 -- サンプルデータ投入．
 -- 各テーブル数十行程度で十分なので，顧客は手書き，注文・注文明細は
 -- generate_series を使い決定的な（毎回同じ結果になる）データにしている
--- （random() は使わない．up.sh を何度実行しても同じ内容になる）．
+-- （random() は使わない．何度作り直しても同じ内容になる）．
 
 -- customers: 20 件．
 INSERT INTO customers (customer_name, email, country, signup_date) VALUES
