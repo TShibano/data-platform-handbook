@@ -41,13 +41,13 @@ die() {
   exit 1
 }
 
-# このファイル（shared/scripts/common.sh）の位置から，
-# BASH_SOURCE を使ってリポジトリルート（2 階層上）を返す．
+# このファイル（setup/lib/common.sh）の位置から，
+# BASH_SOURCE を使って setup ディレクトリ（1 階層上）を返す．
 # どこから source / 実行されても正しく解決する．
 repo_root() {
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  (cd "${script_dir}/../.." && pwd)
+  (cd "${script_dir}/.." && pwd)
 }
 
 # --- 実行環境の判定 ---

@@ -12,10 +12,10 @@ DH_UPSTREAM_COMPOSE="${DH_DIR}/compose.upstream.yml"
 DH_OVERRIDE_COMPOSE="${DH_DIR}/compose.override.yml"
 DH_ALTPORTS_COMPOSE="${DH_DIR}/compose.altports.yml"
 
-# shellcheck source=../../shared/scripts/common.sh
-source "${DH_SCRIPT_DIR}/../../shared/scripts/common.sh"
-# shellcheck source=../../shared/scripts/versions.env
-source "${DH_SCRIPT_DIR}/../../shared/scripts/versions.env"
+# shellcheck source=../../lib/common.sh
+source "${DH_SCRIPT_DIR}/../../lib/common.sh"
+# shellcheck source=../../lib/versions.env
+source "${DH_SCRIPT_DIR}/../../lib/versions.env"
 
 # DataHub の upstream compose は全サービスに profiles: が付いており，
 # --profile を指定しないとサービスが 1 つも起動しない．
@@ -50,7 +50,7 @@ dh_compose_files() {
 ensure_upstream_compose() {
   if [ ! -f "${DH_UPSTREAM_COMPOSE}" ]; then
     log_info "compose.upstream.yml が無いので取得する．"
-    "${DH_SCRIPT_DIR}/../../shared/scripts/fetch-compose.sh" datahub
+    "${DH_SCRIPT_DIR}/../../lib/fetch-compose.sh" datahub
   fi
 }
 

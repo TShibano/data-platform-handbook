@@ -8,8 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# shellcheck source=../../../shared/scripts/common.sh
-source "${SCRIPT_DIR}/../../../shared/scripts/common.sh"
+# shellcheck source=../../lib/common.sh
+source "${SCRIPT_DIR}/../../lib/common.sh"
 
 usage() {
   cat <<EOF
@@ -48,7 +48,7 @@ compose_cmd
 
 cd "${PG_DIR}"
 
-DOWN_ARGS=(-f compose.yml down)
+DOWN_ARGS=(-f compose.yaml down)
 if [ "${PURGE}" -eq 1 ]; then
   log_warn "--purge: sample-pg-data ボリュームを削除する．"
   DOWN_ARGS+=(-v)
