@@ -46,7 +46,7 @@ UPSTREAM_COMPOSE="$SCRIPT_DIR/compose.upstream.yml"
 
 case "$DATAHUB_ALT_PORTS" in
     0|1) ;;
-    *) die "DATAHUB_ALT_PORTS は 0 か 1 で指定すること（現在: $DATAHUB_ALT_PORTS）" ;;
+    *) die "DATAHUB_ALT_PORTS は 0 か 1 で指定すること（現在: ${DATAHUB_ALT_PORTS}）" ;;
 esac
 
 # DataHub の upstream compose は全サービスに profiles: が付いており，

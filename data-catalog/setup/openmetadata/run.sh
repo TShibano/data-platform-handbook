@@ -56,7 +56,7 @@ EXPECTED_UPSTREAM_EDGES=3
 
 case "$OM_ALT_PORTS" in
     0|1) ;;
-    *) die "OM_ALT_PORTS は 0 か 1 で指定すること（現在: $OM_ALT_PORTS）" ;;
+    *) die "OM_ALT_PORTS は 0 か 1 で指定すること（現在: ${OM_ALT_PORTS}）" ;;
 esac
 
 # compose に渡す -f 引数．OM_ALT_PORTS=1 のときだけ compose.altports.yml
