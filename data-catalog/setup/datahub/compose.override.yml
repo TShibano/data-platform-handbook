@@ -16,8 +16,8 @@
 # `config` の出力で確認済み．
 #
 # ポートをずらしたい場合（OpenMetadata との同時起動など）は，この override とは
-# 別に compose.altports.yml を 3 枚目として重ねる（scripts/lib.sh の
-# dh_compose_files() / DATAHUB_ALT_PORTS=1 を参照）．
+# 別に compose.altports.yml を 3 枚目として重ねる（.env の DATAHUB_ALT_PORTS=1．
+# run.sh の COMPOSE_FILES を参照）．
 #
 # --- メモリ制限について ---
 # podman machine のメモリは 9.3GiB（実測）．DataHub の quickstart profile は
@@ -42,7 +42,7 @@
 # - `volumes: !override` を使う: !override の中で ${HOME} が展開されず，
 #   `volume [${HOME}/.datahub/plugins] not defined in top level` で落ちる
 #   （ports で踏んだ既知の不具合と同じ）．
-# そのため再ラベルは compose ではなく scripts/lib.sh の ensure_host_dirs で
+# そのため再ラベルは compose ではなく run.sh の ensure_host_dirs で
 # ホスト側ディレクトリに chcon して行う．
 
 services:

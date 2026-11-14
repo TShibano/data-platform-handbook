@@ -1,13 +1,15 @@
-# 各ツールの起動設定（ローカル専用の秘密が入りうる）．configs/*.env はコミット対象なので対象外．
-.env
+# 各ツールの起動設定（.env.example をコピーして各自が作る．認証情報を含み得るためコミットしない）
+*/.env
+*/.env.*
+!*/.env.example
 
-# fetch-compose.sh のダウンロード失敗時に残りうる一時ファイル
-.compose.upstream.*
+# fetch-compose のダウンロード中に作る一時ファイル
+*/.compose.upstream.*
 
 # OS / エディタ由来
 .DS_Store
 *.swp
 *.swo
 
-# OpenMetadata upstream compose が作る mysql の bind mount
+# OpenMetadata の upstream compose が作る mysql の bind mount（compose.override.yml で named volume に置き換えている）
 openmetadata/docker-volume/

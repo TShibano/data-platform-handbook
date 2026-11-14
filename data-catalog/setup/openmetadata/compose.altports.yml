@@ -1,7 +1,7 @@
 # DataHub と同時起動したいときだけ重ねる 3 枚目の override．
-# 既定では使わない．scripts/lib.sh の om_compose_files() が
-# OM_ALT_PORTS=1 のときだけこのファイルを -f で追加する．
-#   例: OM_ALT_PORTS=1 ./openmetadata/scripts/up.sh
+# 既定では使わない．run.sh は .env の OM_ALT_PORTS=1 のときだけ
+# このファイルを -f で追加する．
+#   例: .env に OM_ALT_PORTS=1 を書いて ./run.sh start（一時的なら OM_ALT_PORTS=1 ./run.sh start）
 #
 # ずらす対象は DataHub と衝突する 3 サービスのみ．
 # openmetadata-server の 8585 / 8586 は DataHub（UI 9002）と衝突しないため

@@ -1,11 +1,11 @@
-# サンプル DB (examples/postgres) のメタデータインジェスト定義．
+# サンプル DB (../sample-db) のメタデータインジェスト定義．
 # テーブル・ビューのスキーマ／コメントを取り込む．
 #
-# 接続先は examples/postgres/compose.yml のサンプル DB．
+# 接続先は ../sample-db/compose.yaml のサンプル DB．
 # OpenMetadata のスタックとサンプル DB は別 compose プロジェクト（別ネットワーク）
 # のため，host.containers.internal 経由でホストの公開ポート（5432）を参照する．
 #
-# jwtToken は ingest.sh がビルド時ではなく実行時に，このファイルをコピーした
+# jwtToken は ./run.sh ingest がビルド時ではなく実行時に，このファイルをコピーした
 # 一時ファイルへ sed で埋め込む（イメージにも git にも平文トークンを残さない）．
 # プレースホルダ自体は秘密ではない．
 source:

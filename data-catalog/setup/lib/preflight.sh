@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 起動前の前提チェック．
 #
-# 各 up.sh の冒頭から source して preflight を呼ぶ（COMPOSE_CMD を呼び出し元の
+# 各 run.sh から source し，start の冒頭で preflight を呼ぶ（COMPOSE_CMD を呼び出し元の
 # シェルに残す必要があるため，実行ではなく source する）．
-# 単体でも実行できる: ./shared/scripts/preflight.sh [要求メモリMiB] [要求ディスクGB]
+# 単体でも実行できる: ./lib/preflight.sh [要求メモリMiB] [要求ディスクGB]
 #
 # 独立したテストスイートは作らない方針のため，これは検証専用スクリプトではなく
 # 通常の起動経路に常に走る前段チェックとして置く．
@@ -25,7 +25,7 @@ preflight() {
   # podman run の -v やコンテナ内パスが壊れるため，分かりやすく落とす．
   if [ "${os}" = "windows" ]; then
     die "Windows ネイティブ（Git Bash / MSYS2 / PowerShell）は対象外．
-WSL2 のディストリを入れ，その中で podman ごと動かすこと（plans/003 の 3.1）．"
+WSL2 のディストリを入れ，その中で podman ごと動かすこと（evaluation/plans/003 の 3.1）．"
   fi
 
   require_podman
