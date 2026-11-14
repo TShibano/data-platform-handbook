@@ -1,0 +1,38 @@
+# インジェスト対象のサンプル S3（MinIO）．sample-db と同じく，OpenMetadata / DataHub の
+# どちらのスタックとも別 compose プロジェクト（＝別ネットワーク）として独立に起動する．
+# 両ツールからは host.containers.internal 経由でホストの公開ポート（9100）を参照させる．
+#
+# MinIO の公式イメージは配布終了しているため，object-storage/setup/minio の Dockerfile で
+# 公式ソースの固定タグをビルドしたイメージ（localhost/handbook-minio:<タグ>）を使う．
+# object-storage 側と同じイメージタグなので，どちらかでビルド済みならそれを共有する．
+#
+# 認証情報は検証用の固定値であり秘密ではない（ローカル検証専用で外部に公開しない前提）．
+# 各ツールのインジェスト定義にも同じ値を書いているため，.env では変えられないようにしている．
+#
+# ./run.sh start でも podman compose up -d でも起動できる（どちらも .env を読む）．
+# ただしデータの投入（parquet の生成とアップロード）は ./run.sh start / load だけが行う．
+
+volumes:
+  sample-s3-data:
+
+services:
+  minio:
+    build:
+      context: ../../../object-storage/setup/minio
+      dockerfile: Dockerfile
+      args:
+        MINIO_VERSION: ${SAMPLE_S3_MINIO_VERSION:-RELEASE.2025-10-15T17-29-55Z}
+    image: localhost/handbook-minio:${SAMPLE_S3_MINIO_VERSION:-RELEASE.2025-10-15T17-29-55Z}
+    container_name: sample_minio
+    restart: "no"
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: sample_s3_user
+      MINIO_ROOT_PASSWORD: sample_s3_password
+    ports:
+      # object-storage/setup の各製品（9000〜9021 など）と重ならないポートにする
+      - "9100:9000"   # S3 API
+      - "9101:9001"   # Web コンソール
+    volumes:
+      - sample-s3-data:/data
+    mem_limit: 512m

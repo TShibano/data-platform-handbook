@@ -1,0 +1,10 @@
+# サンプル S3 に置く parquet を生成し，MinIO へアップロードする使い捨てイメージ．
+# ../run.sh start / load がビルドして，MinIO コンテナとネットワーク名前空間を共有して実行する．
+# バージョンは object-storage/benchmark（Python 3.13，polars 1.41.2，boto3 1.43.18）で動作実績のある組み合わせに揃える．
+FROM docker.io/library/python:3.13-slim
+
+RUN pip install --no-cache-dir 'polars==1.41.2' 'boto3==1.43.18'
+
+COPY generate.py /app/generate.py
+WORKDIR /app
+ENTRYPOINT ["python", "/app/generate.py"]

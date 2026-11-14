@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "dataPath": "bronze/*/**/*.parquet",
+      "structureFormat": "parquet",
+      "isPartitioned": true,
+      "autoPartitionDetection": true
+    },
+    {
+      "dataPath": "silver/*/**/*.parquet",
+      "structureFormat": "parquet",
+      "isPartitioned": true,
+      "autoPartitionDetection": true
+    },
+    {
+      "dataPath": "gold/*/**/*.parquet",
+      "structureFormat": "parquet",
+      "isPartitioned": true,
+      "autoPartitionDetection": true
+    }
+  ]
+}
