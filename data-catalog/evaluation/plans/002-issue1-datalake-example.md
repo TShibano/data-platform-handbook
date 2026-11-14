@@ -1,5 +1,7 @@
 # 実装計画: データレイク（メダリオン + parquet）のサンプルデータセット
 
+> 注: この計画は 2026-11 の再配置前に書いたもので，パスは当時の構成（`openmetadata/scripts/up.sh`，`shared/scripts/`，`examples/` など）のまま．現在の対応は [../README.md](../README.md) を参照．
+
 作成日: 2026-09-05
 対象: Issue #1「examples: S3互換オブジェクトストレージ上のparquetファイルをモチーフにしたサンプルデータセットの作成」
 状態: **検討中**．3.1（ストレージ = MinIO）は決定．

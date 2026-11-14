@@ -1,4 +1,4 @@
-# 検証用サンプルデータ
+# サンプル DB
 
 OpenMetadata と DataHub に**同じものを取り込んで比較する**ためのサンプル DB．
 題材は「顧客が注文し，注文に明細行が付く」というありふれた EC ドメイン．
@@ -6,14 +6,14 @@ OpenMetadata と DataHub に**同じものを取り込んで比較する**ため
 このディレクトリだけで完結しており，どちらのツールのスタックとも独立に起動できる．
 
 ```
-examples/
+sample-db/
 ├── README.md                   # 本ファイル
-├── sample-data/
-│   ├── 01_schema.sql           # DDL（テーブル・ビュー・COMMENT ON）
-│   └── 02_data.sql             # INSERT
-└── postgres/
-    ├── compose.yml             # PostgreSQL 16 の compose 定義
-    └── scripts/{up,down}.sh
+├── run.sh                      # start / stop / status / logs / purge / config
+├── .env.example                # 起動設定（イメージ・待機秒数）
+├── compose.yaml                # PostgreSQL 16 の compose 定義
+└── sample-data/
+    ├── 01_schema.sql           # DDL（テーブル・ビュー・COMMENT ON）
+    └── 02_data.sql             # INSERT
 ```
 
 `sample-data/` は PostgreSQL 公式イメージの `/docker-entrypoint-initdb.d/` に
@@ -110,7 +110,7 @@ read-only でマウントされ，**ファイル名順**（`01_` → `02_`）に
 | `order_details` | 80 |
 | `customer_order_summary` | 20 |
 
-**`random()` は使っていない．** `up.sh` を何度実行しても中身は同じになる．
+**`random()` は使っていない．** 何度作り直しても中身は同じになる．
 再現性がないと「取り込み結果が変わったのはツールのせいかデータのせいか」が
 分からなくなるため．
 
@@ -126,11 +126,17 @@ read-only でマウントされ，**ファイル名順**（`01_` → `02_`）に
 ## 起動と停止
 
 ```sh
-./examples/postgres/scripts/up.sh     # 起動．初期化 SQL の完了まで待つ
-./examples/postgres/scripts/down.sh   # 停止．--purge でボリュームも削除
+./run.sh start     # 起動．初期化 SQL の完了まで待つ
+./run.sh status    # 起動状態と接続情報
+./run.sh stop      # 停止（データはボリュームに残る）
+./run.sh purge     # 停止してボリュームも削除（確認あり．FORCE=1 で確認省略）
 ```
 
-`up.sh` は起動後に実際に `SELECT` が通るところまで確認してから返る．
+`start` は起動後に実際に `SELECT` が通り，ビューにデータが入っているところまで確認してから返る．
+`podman compose up -d` でも起動できるが，この確認は行わない．
+
+設定（イメージ・待機秒数）は `.env` で与える（[.env.example](.env.example)，方式は [../README.md の「設定方法（.env）」](../README.md#設定方法env)）．
+ポートと接続情報は各ツールのインジェスト定義にも同じ値を書いているため，`.env` では変えられない．
 
 接続情報（**検証用の固定値であり秘密ではない**．ローカル専用で外部に公開しない前提）．
 
@@ -149,8 +155,8 @@ PostgreSQL 公式イメージの `/docker-entrypoint-initdb.d/` は
 `sample-data/*.sql` を書き換えたら，ボリュームごと作り直さないと反映されない．
 
 ```sh
-./examples/postgres/scripts/down.sh --purge
-./examples/postgres/scripts/up.sh
+FORCE=1 ./run.sh purge
+./run.sh start
 ```
 
 ## ツール側からの参照
@@ -161,19 +167,19 @@ PostgreSQL 公式イメージの `/docker-entrypoint-initdb.d/` は
 
 この名前は macOS（`podman machine` 経由）では podman が自動で定義するが，
 Linux ネイティブでは版やネットワーク実装によって未定義になりうる．
-そのため各 `ingest.sh` は machine を経由しないときだけ
+そのため各ツールの `run.sh ingest` は machine を経由しないときだけ
 `--add-host=host.containers.internal:host-gateway` を付けて起動する．
 インジェスト定義（recipe / ingestion yaml）側は OS によらず同じ内容のまま．
 
-取り込みは各ツールの `ingest.sh` が行う．インジェスト定義の実体はこちら．
+取り込みは各ツールの `run.sh ingest` が行う．インジェスト定義の実体はこちら．
 
-- OpenMetadata: `openmetadata/configs/ingestion/postgres_metadata.yaml` および
+- OpenMetadata: [`../openmetadata/configs/ingestion/postgres_metadata.yaml`](../openmetadata/configs/ingestion/postgres_metadata.yaml) および
   `postgres_lineage.yaml`（メタデータとリネージで**パイプラインが分かれている**）
-- DataHub: `datahub/configs/recipes/postgres_to_datahub.yml`（1 本で両方やる）
+- DataHub: [`../datahub/configs/recipes/postgres_to_datahub.yml`](../datahub/configs/recipes/postgres_to_datahub.yml)（1 本で両方やる）
 
 どちらも取り込み対象を `public` スキーマに限定してある．
 限定しないと OpenMetadata 側が `information_schema` まで取り込んでしまい，
-サンプルデータがノイズに埋もれる（経緯は `docs/comparison.md` を参照）．
+サンプルデータがノイズに埋もれる（経緯は [../../evaluation/docs/comparison.md](../../evaluation/docs/comparison.md) を参照）．
 
 ## 取り込み後に見るところ
 
@@ -184,4 +190,4 @@ Linux ネイティブでは版やネットワーク実装によって未定義�
 3. **リネージ**: `customer_order_summary` の上流に 3 テーブルが並ぶか．
 4. **カラムリネージ**: `total_spent` の上流に `quantity` と `unit_price` が並ぶか．
 
-実際に確認した結果は `docs/comparison.md` にまとめてある．
+実際に確認した結果は [../../evaluation/docs/comparison.md](../../evaluation/docs/comparison.md) にまとめてある．
