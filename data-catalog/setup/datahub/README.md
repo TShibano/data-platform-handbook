@@ -15,7 +15,7 @@
 cp .env.example .env        # 必要な行だけ編集する
 ./run.sh config             # 実際に使われる値を確認する
 ./run.sh start              # podman machine のメモリが 8GB 以上必要．OpenMetadata より起動が遅い
-./run.sh ingest             # 先に ../sample-db/run.sh start しておく
+./run.sh ingest             # 先に ../sample-db/run.sh start（S3 なら ../sample-s3/run.sh start）しておく
 ```
 
 設定できる変数（同時起動用のポートずらし，イメージタグ，トークンの salt / signing key，起動待ちの秒数）と既定値は [.env.example](.env.example) を参照．
@@ -37,8 +37,20 @@ cp .env.example .env        # 必要な行だけ編集する
 
 ## インジェスト
 
-`./run.sh ingest` は次を行う．
+```bash
+./run.sh ingest                       # 起動しているサンプルデータ（sample-db / sample-s3）をすべて取り込む
+./run.sh ingest sample-db sample-s3   # 対象を指定する（起動していなければエラー）
+```
 
-1. `Containerfile.ingestion`（`python:3.11-slim` + `acryl-datahub[datahub-rest,postgres,mysql,dbt]==1.7.0`）をビルド
-2. recipe（`configs/recipes/postgres_to_datahub.yml`）の GMS ポートを起動設定に合わせて埋め込み，取り込む（テレメトリ送信は無効化）
-3. 検索・リネージ API で，`customers` がヒットし，`customer_order_summary` に上流があることを検証する
+共通の流れ:
+
+1. `Containerfile.ingestion`（`python:3.11-slim` + `acryl-datahub[datahub-rest,postgres,mysql,dbt,s3]==1.7.0`）をビルド
+2. recipe の GMS ポートを起動設定に合わせて埋め込み，取り込む（テレメトリ送信は無効化）
+3. 対象ごとに API で結果を検証する
+
+| 対象 | recipe | 検証内容 |
+|---|---|---|
+| sample-db | `configs/recipes/postgres_to_datahub.yml` | 検索で `customers` がヒットし，`customer_order_summary` に上流がある |
+| sample-s3 | `configs/recipes/s3_to_datahub.yml` | `bronze/orders` / `silver/orders` / `gold/daily_sales` の 3 データセットにスキーマが入っている |
+
+S3 では，どのパスを 1 データセットにするかを recipe の `path_specs` で決める（OpenMetadata のようなバケット側のマニフェストは使わない）．詳細と取り込み結果は [../sample-s3/README.md](../sample-s3/README.md#datahub)．

@@ -11,9 +11,10 @@
 #  表記が異なる点に注意．詳細は .env.example のコメントを参照．）
 FROM docker.io/library/python:3.11-slim
 
-# datahub-rest（GMS への REST 送信）/ postgres / mysql / dbt の各コネクタを同梱．
+# datahub-rest（GMS への REST 送信）/ postgres / mysql / dbt / s3 の各コネクタを同梱．
+# s3 はサンプル S3（../sample-s3）の parquet 用（pyarrow ベースで Spark は不要）．
 # バージョンは上記コメントの通り 1.7.0 に固定する．
-RUN pip install --no-cache-dir 'acryl-datahub[datahub-rest,postgres,mysql,dbt]==1.7.0'
+RUN pip install --no-cache-dir 'acryl-datahub[datahub-rest,postgres,mysql,dbt,s3]==1.7.0'
 
 # インジェスト定義（recipe）を配置する．
 # ビルドコンテキストは datahub/ 直下なのでそのまま参照できる．

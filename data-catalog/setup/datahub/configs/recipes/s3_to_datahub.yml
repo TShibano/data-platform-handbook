@@ -1,0 +1,36 @@
+# サンプル S3 (../sample-s3) を DataHub へインジェストする recipe．
+#
+# 接続先は ../sample-s3/compose.yaml の MinIO．DataHub のスタックとは別 compose
+# プロジェクト（別ネットワーク）のため，host.containers.internal 経由でホストの公開ポート（9100）を参照する．
+# 認証情報は検証用の固定値であり秘密ではない．
+#
+# どのパスを 1 つのデータセットにするかは，OpenMetadata と違いバケット側のマニフェストではなく
+# この recipe の path_specs で決める（openmetadata.json は DataHub では使わない）．
+#   include の {table} の位置のフォルダが 1 データセットになり，その下の dt=YYYY-MM-DD/ は
+#   autodetect_partitions（既定 true）でパーティションとして扱われる（include の末尾に /** が補われる）．
+#   {layer} は名前付き変数で，bronze / silver / gold のどれにも一致する．
+#   bronze/orders と silver/orders は表示名が同じ orders になってしまうため，table_name で層名を付ける
+#   （データセットの URN はパスから作られるので，表示名を変えても別データセットとして区別される）．
+#   traversal_method は既定の MAX で，スキーマは最新パーティション（dt=2026-11-15）のファイルから推論する．
+#
+# sink の GMS ポートは postgres_to_datahub.yml と同じく REPLACE_WITH_GMS_PORT を
+# ./run.sh ingest が実行時に置き換える．
+source:
+  type: s3
+  config:
+    platform: s3
+    env: PROD
+    path_specs:
+      - include: "s3://sample-lake/{layer}/{table}"
+        table_name: "{layer}.{table}"
+    aws_config:
+      aws_access_key_id: sample_s3_user
+      aws_secret_access_key: sample_s3_password
+      # MinIO はリージョンを見ないが，boto3 の署名に必要なので AWS の既定値を入れる
+      aws_region: us-east-1
+      aws_endpoint_url: http://host.containers.internal:9100
+
+sink:
+  type: datahub-rest
+  config:
+    server: http://host.containers.internal:REPLACE_WITH_GMS_PORT
