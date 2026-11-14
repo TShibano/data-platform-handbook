@@ -1,0 +1,44 @@
+# サンプル S3 (../sample-s3) のメタデータインジェスト定義（Storage サービス）．
+# MinIO 上の parquet を Container として取り込む．
+#
+# 接続先は ../sample-s3/compose.yaml の MinIO．OpenMetadata のスタックとは別 compose
+# プロジェクト（別ネットワーク）のため，host.containers.internal 経由でホストの公開ポート（9100）を参照する．
+# 認証情報は検証用の固定値であり秘密ではない．
+#
+# 「どのパスを 1 つの Container として扱うか」はこのファイルではなく，バケット直下の
+# openmetadata.json（マニフェスト．../sample-s3/openmetadata.json をアップロードしている）が決める．
+# マニフェストが無いと，バケットが Container として登録されるだけでファイルの構造は取り込まれない．
+#
+# Database サービスの Datalake コネクタ（type: datalake）でも parquet は読めるが，
+# 1 ファイル = 1 テーブルとして登録されるため，dt= のパーティションごとに別テーブルになってしまう．
+# パーティションを束ねるため Storage サービスの S3 コネクタを使う（evaluation/plans/002 の 2.7）．
+#
+# jwtToken の扱いは postgres_metadata.yaml と同じ（./run.sh ingest が実行時に埋め込む）．
+source:
+  type: s3
+  serviceName: sample_s3
+  serviceConnection:
+    config:
+      type: S3
+      awsConfig:
+        awsAccessKeyId: sample_s3_user
+        awsSecretAccessKey: sample_s3_password
+        # MinIO はリージョンを見ないが，boto3 の署名に必要なので AWS の既定値を入れる
+        awsRegion: us-east-1
+        endPointURL: http://host.containers.internal:9100
+      bucketNames:
+        - sample-lake
+  sourceConfig:
+    config:
+      type: StorageMetadata
+
+sink:
+  type: metadata-rest
+  config: {}
+
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://host.containers.internal:8585/api
+    authProvider: openmetadata
+    securityConfig:
+      jwtToken: "REPLACE_WITH_INGESTION_BOT_JWT"

@@ -15,7 +15,7 @@
 cp .env.example .env        # 必要な行だけ編集する
 ./run.sh config             # 実際に使われる値を確認する
 ./run.sh start              # podman machine のメモリが 6GB 以上必要
-./run.sh ingest             # 先に ../sample-db/run.sh start しておく
+./run.sh ingest             # 先に ../sample-db/run.sh start（S3 なら ../sample-s3/run.sh start）しておく
 ```
 
 設定できる変数（同時起動用のポートずらし，イメージ，ingest 用の管理者ログイン，起動待ちの秒数）と既定値は [.env.example](.env.example) を参照．
@@ -37,9 +37,20 @@ cp .env.example .env        # 必要な行だけ編集する
 
 ## インジェスト
 
-`./run.sh ingest` は次を行う．
+```bash
+./run.sh ingest                       # 起動しているサンプルデータ（sample-db / sample-s3）をすべて取り込む
+./run.sh ingest sample-db sample-s3   # 対象を指定する（起動していなければエラー）
+```
 
-1. `Containerfile.ingestion`（公式 ingestion イメージ + postgres / mysql / dbt コネクタ）をビルド
+共通の流れ:
+
+1. `Containerfile.ingestion`（公式 ingestion イメージ + postgres / mysql / dbt コネクタ．S3 に要る boto3 / pyarrow は公式イメージに入っている）をビルド
 2. 管理者でログインし，ingestion-bot の JWT を API から取得（値はログに出さず，一時ファイルの定義に埋め込んで実行後に消す）
-3. メタデータ（`configs/ingestion/postgres_metadata.yaml`）とリネージ（`postgres_lineage.yaml`）を別パイプラインで取り込む
-4. 検索・リネージ API で，`public` のテーブル数が 5 件，`customer_order_summary` の上流が 3 件であることを検証する
+3. 対象ごとに取り込み，API で結果を検証する
+
+| 対象 | サービス種別 | 定義 | 検証内容 |
+|---|---|---|---|
+| sample-db | Database（PostgreSQL） | `configs/ingestion/postgres_metadata.yaml`，`postgres_lineage.yaml`（メタデータとリネージは別パイプライン） | `public` のテーブル数が 5 件，`information_schema` が無い，検索で `customers` がヒット，`customer_order_summary` の上流が 3 件 |
+| sample-s3 | Storage（S3） | `configs/ingestion/s3_storage.yaml` | バケットと `bronze/orders` / `silver/orders` / `gold/daily_sales` の Container が登録され，3 件ともパーティション付きで先頭列が `dt`（DATE） |
+
+S3 は Database サービスの Datalake コネクタではなく，Storage サービスの S3 コネクタで取り込む．Datalake コネクタは 1 ファイル = 1 テーブルになり，`dt=` のパーティションごとに別テーブルができてしまうため．Storage サービスで parquet の構造を取り込むには，バケット直下にマニフェスト `openmetadata.json` が必要（書き方は [../sample-s3/README.md](../sample-s3/README.md#openmetadata-用マニフェストopenmetadatajson)）．

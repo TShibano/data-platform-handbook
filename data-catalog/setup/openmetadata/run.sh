@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# OpenMetadata のスタックを起動・停止し，サンプル DB をインジェストする
-# 使い方: ./run.sh {start|stop|status|logs [service...]|purge|ingest|fetch-compose [--force]|config [--show-secrets]}
+# OpenMetadata のスタックを起動・停止し，サンプル DB / サンプル S3 をインジェストする
+# 使い方: ./run.sh {start|stop|status|logs [service...]|purge|ingest [sample-db] [sample-s3]|fetch-compose [--force]|config [--show-secrets]}
 #   設定は同じディレクトリの .env で与える（cp .env.example .env して編集する．無ければ既定値）．
 #   別ファイルは ENV_FILE=.env.bench ./run.sh start のように指定する．
 #   優先順位: シェルの環境変数 > .env > 既定値（config で実際の値と出所を確認できる）
@@ -44,6 +44,9 @@ REQUIRED_DISK_GB=13
 INGESTION_IMAGE_TAG="om-ingestion:local"
 UPSTREAM_COMPOSE="$SCRIPT_DIR/compose.upstream.yml"
 OM_BASE_URL="http://localhost:${UI_PORT}"
+
+# サンプル S3（../sample-s3）の S3 API ポート．configs/ingestion/s3_storage.yaml にも同じ値を書いている
+SAMPLE_S3_PORT=9100
 
 # --- 期待値定数（../sample-db/sample-data/01_schema.sql の内容に対応） ---
 # public スキーマのテーブル総数．
@@ -97,10 +100,11 @@ print_info() {
     fi
 }
 
-# start はスタックを起動するだけでサンプル DB は取り込まないため，次の手順を案内する
+# start はスタックを起動するだけでサンプルデータは取り込まないため，次の手順を案内する
 print_next_steps() {
-    echo "次の手順: サンプル DB を取り込むには $0 ingest"
-    echo "  （サンプル DB が未起動なら先に $(cd "$SCRIPT_DIR/../sample-db" && pwd)/run.sh start）"
+    echo "次の手順: サンプル DB / サンプル S3 を取り込むには $0 ingest（起動しているものをすべて取り込む）"
+    echo "  （未起動なら先に $(cd "$SCRIPT_DIR/../sample-db" && pwd)/run.sh start"
+    echo "              / $(cd "$SCRIPT_DIR/../sample-s3" && pwd)/run.sh start）"
 }
 
 cmd_start() {
@@ -203,106 +207,79 @@ cmd_logs() {
     compose logs -f "$@"
 }
 
-# サンプル DB (../sample-db) を OpenMetadata へインジェストし，結果を API で検証する．
-# 1. Containerfile.ingestion をビルド
-# 2. ingestion-bot の JWT を API から動的に取得
-# 3. メタデータインジェスト（テーブル・ビュー・コメント）を実行
-# 4. リネージインジェスト（view -> table のリネージ）を実行
-# 5. 検索 API とリネージ API で結果を検証
-# 前提: このスタックと ../sample-db の両方が起動していること．
-cmd_ingest() {
-    require_podman
+# 取り込み対象（ingest の引数）．引数なしなら，起動しているものをすべて取り込む
+INGEST_TARGETS_ALL=(sample-db sample-s3)
 
-    # Linux ネイティブ向けの補正．SELinux enforcing なら bind mount を再ラベルし，
-    # host.containers.internal が未定義な環境では --add-host で補う．
-    # machine モード（macOS 等）ではどちらも空になる．
-    local mount_suffix
-    mount_suffix="$(selinux_mount_suffix)"
-    container_host_args
+sample_db_ready() {
+    podman exec sample_postgres psql -U sample_user -d sampledb -c 'SELECT 1;' >/dev/null 2>&1
+}
 
-    # --- 0. 前提の到達確認 ---
-    log_info "OpenMetadata サーバへの到達を確認する．"
-    if ! curl -fsS -o /dev/null "${OM_BASE_URL}/api/v1/system/version"; then
-        die "OpenMetadata サーバ (${OM_BASE_URL}) に到達できない．先に $0 start を実行すること．"
-    fi
+sample_s3_ready() {
+    curl -fsS -o /dev/null "http://localhost:${SAMPLE_S3_PORT}/minio/health/live" 2>/dev/null
+}
 
-    log_info "サンプル DB (postgres) への到達を確認する．"
-    if ! podman exec sample_postgres psql -U sample_user -d sampledb -c 'SELECT 1;' >/dev/null 2>&1; then
-        die "サンプル DB に到達できない．先に ../sample-db/run.sh start を実行すること．"
-    fi
-
-    # --- 1. イメージビルド ---
-    # ビルドコンテキストはこのディレクトリ（Containerfile が configs/ を COPY する）
-    log_info "Containerfile.ingestion をビルドする．"
-    podman build -f "$SCRIPT_DIR/Containerfile.ingestion" -t "$INGESTION_IMAGE_TAG" "$SCRIPT_DIR"
-
-    # --- 2. ingestion-bot の JWT を API から動的に取得する ---
-    # OpenMetadata は初期セットアップ時に ingestion-bot 用の JWT を自動生成して
-    # 保持しており，GET /users/token/{id} でいつでも取得し直せる（既定では
-    # 有効期限なし＝Unlimited）．この値は「公開されている既定値」ではなく，
-    # このデプロイ固有にサーバが生成した値なのでログに出力しない．
-    #
-    # 管理者ログインは OM_ADMIN_EMAIL / OM_ADMIN_PASSWORD を使う（既定は OpenMetadata の
-    # 初期値 admin@open-metadata.org / admin．password は API 仕様上 base64 で渡す）．
+# 管理者でログインし，ingestion-bot の JWT を取得して ADMIN_TOKEN / BOT_JWT に入れる．
+# OpenMetadata は初期セットアップ時に ingestion-bot 用の JWT を自動生成して
+# 保持しており，GET /users/token/{id} でいつでも取得し直せる（既定では
+# 有効期限なし＝Unlimited）．この値は「公開されている既定値」ではなく，
+# このデプロイ固有にサーバが生成した値なのでログに出力しない．
+#
+# 管理者ログインは OM_ADMIN_EMAIL / OM_ADMIN_PASSWORD を使う（既定は OpenMetadata の
+# 初期値 admin@open-metadata.org / admin．password は API 仕様上 base64 で渡す）．
+om_login() {
     log_info "管理者 ($OM_ADMIN_EMAIL) でログインしてアクセストークンを取得する．"
-    local password_b64 login_body login_response admin_token bot_id bot_jwt
+    local password_b64 login_body login_response bot_id
     password_b64="$(printf '%s' "$OM_ADMIN_PASSWORD" | base64)"
     # メールアドレスとパスワードを JSON 文字列として安全に埋め込む
     login_body="$(python3 -c 'import json,sys; print(json.dumps({"email": sys.argv[1], "password": sys.argv[2]}))' "$OM_ADMIN_EMAIL" "$password_b64")"
     login_response="$(curl -fsS -X POST "${OM_BASE_URL}/api/v1/users/login" \
         -H 'Content-Type: application/json' \
         -d "$login_body")" || die "管理者ログインに失敗した．OM_ADMIN_EMAIL / OM_ADMIN_PASSWORD を確認すること（$0 config）．"
-    admin_token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])')"
-    [ -n "$admin_token" ] || die "管理者のアクセストークン取得に失敗した．"
+    ADMIN_TOKEN="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])')"
+    [ -n "$ADMIN_TOKEN" ] || die "管理者のアクセストークン取得に失敗した．"
 
     log_info "ingestion-bot のユーザ ID を取得する．"
     bot_id="$(curl -fsS "${OM_BASE_URL}/api/v1/users/name/ingestion-bot" \
-        -H "Authorization: Bearer ${admin_token}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+        -H "Authorization: Bearer ${ADMIN_TOKEN}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
     [ -n "$bot_id" ] || die "ingestion-bot のユーザ ID 取得に失敗した．"
 
     log_info "ingestion-bot の JWT を取得する（GET /users/token/{id}）．"
-    bot_jwt="$(curl -fsS "${OM_BASE_URL}/api/v1/users/token/${bot_id}" \
-        -H "Authorization: Bearer ${admin_token}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["JWTToken"])')"
-    [ -n "$bot_jwt" ] || die "ingestion-bot の JWT 取得に失敗した．"
+    BOT_JWT="$(curl -fsS "${OM_BASE_URL}/api/v1/users/token/${bot_id}" \
+        -H "Authorization: Bearer ${ADMIN_TOKEN}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["JWTToken"])')"
+    [ -n "$BOT_JWT" ] || die "ingestion-bot の JWT 取得に失敗した．"
     log_info "JWT 取得完了（値はログに出さない）．"
+}
 
-    # --- 3. recipe の一時コピーにトークンを埋め込む ---
-    # configs/ingestion/*.yaml のプレースホルダはリポジトリにコミットする値であり
-    # 秘密ではない．実際のトークンはここで一時ファイルに書き出し，終了時に削除する．
-    TMP_DIR="$(mktemp -d)"
-    trap 'rm -rf "$TMP_DIR"' EXIT
-    local f
-    for f in postgres_metadata.yaml postgres_lineage.yaml; do
-        sed "s#REPLACE_WITH_INGESTION_BOT_JWT#${bot_jwt}#" \
-            "$SCRIPT_DIR/configs/ingestion/$f" > "$TMP_DIR/$f"
-    done
-    chmod 600 "$TMP_DIR"/*.yaml
-
-    # --- 4. メタデータインジェスト ---
-    log_info "メタデータインジェストを実行する（テーブル・ビュー・コメント）．"
-    if ! podman run --rm \
+# configs/ingestion/<file> に JWT を埋め込んだ一時コピーを作り，インジェスト用イメージで実行する．
+# プレースホルダはリポジトリにコミットする値であり秘密ではない．実際のトークンは
+# 一時ファイル（chmod 600）にだけ書き出し，終了時に削除する．
+run_ingestion() {
+    local file="$1"
+    sed "s#REPLACE_WITH_INGESTION_BOT_JWT#${BOT_JWT}#" \
+        "$SCRIPT_DIR/configs/ingestion/$file" > "$TMP_DIR/$file"
+    chmod 600 "$TMP_DIR/$file"
+    podman run --rm \
         ${CONTAINER_HOST_ARGS[@]+"${CONTAINER_HOST_ARGS[@]}"} \
-        -v "$TMP_DIR/postgres_metadata.yaml:/opt/ingestion/configs/ingestion/postgres_metadata.yaml:ro${mount_suffix}" \
-        "$INGESTION_IMAGE_TAG" ingest -c /opt/ingestion/configs/ingestion/postgres_metadata.yaml; then
-        die "メタデータインジェストに失敗した．"
-    fi
+        -v "$TMP_DIR/$file:/opt/ingestion/configs/ingestion/$file:ro${MOUNT_SUFFIX}" \
+        "$INGESTION_IMAGE_TAG" ingest -c "/opt/ingestion/configs/ingestion/$file"
+}
 
-    # --- 5. リネージインジェスト ---
+# サンプル DB (../sample-db) をインジェストし，結果を API で検証する．
+# メタデータ（テーブル・ビュー・コメント）とリネージ（view -> table）は別パイプライン．
+ingest_sample_db() {
+    log_info "[sample-db] メタデータインジェストを実行する（テーブル・ビュー・コメント）．"
+    run_ingestion postgres_metadata.yaml || die "メタデータインジェストに失敗した．"
+
     # postgres_lineage.yaml は source.type: postgres-lineage を使っており，
     # これも `metadata ingest`（MetadataWorkflow）で実行する．
     # `metadata lineage` サブコマンドは別物（1 本の生 SQL を指定サービスに対して
     # 手動でリネージ登録する ad-hoc コマンド）で，今回のような
     # DatabaseServiceQueryLineagePipeline recipe の実行には使わない
     # （実機で試して WorkflowInitErrorHandler のエラーになることを確認済み）．
-    log_info "リネージインジェストを実行する（view -> table のリネージ）．"
-    if ! podman run --rm \
-        ${CONTAINER_HOST_ARGS[@]+"${CONTAINER_HOST_ARGS[@]}"} \
-        -v "$TMP_DIR/postgres_lineage.yaml:/opt/ingestion/configs/ingestion/postgres_lineage.yaml:ro${mount_suffix}" \
-        "$INGESTION_IMAGE_TAG" ingest -c /opt/ingestion/configs/ingestion/postgres_lineage.yaml; then
-        die "リネージインジェストに失敗した．"
-    fi
+    log_info "[sample-db] リネージインジェストを実行する（view -> table のリネージ）．"
+    run_ingestion postgres_lineage.yaml || die "リネージインジェストに失敗した．"
 
-    # --- 6. API で結果を検証する ---
+    # --- API で結果を検証する ---
 
     # schemaFilterPattern（public 限定）が効いているかを件数一致で確認する．
     # 以前は「1 件以上ヒットすれば OK」という緩い判定だったため，
@@ -310,7 +287,7 @@ cmd_ingest() {
     log_info "public スキーマのテーブル総数を確認する．"
     local tables_result tables_total table_names
     tables_result="$(curl -fsS "${OM_BASE_URL}/api/v1/tables?databaseSchema=sample_postgres.sampledb.public&limit=100" \
-        -H "Authorization: Bearer ${admin_token}")"
+        -H "Authorization: Bearer ${ADMIN_TOKEN}")"
     tables_total="$(printf '%s' "$tables_result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["paging"]["total"])')"
     table_names="$(printf '%s' "$tables_result" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted(t["name"] for t in d["data"])))')"
     if [ "$tables_total" -ne "$EXPECTED_PUBLIC_TABLES" ]; then
@@ -323,7 +300,7 @@ cmd_ingest() {
     log_info "sample_postgres 配下に information_schema が存在しないことを確認する．"
     local schemas_result
     schemas_result="$(curl -fsS "${OM_BASE_URL}/api/v1/databaseSchemas?database=sample_postgres.sampledb&limit=100" \
-        -H "Authorization: Bearer ${admin_token}")"
+        -H "Authorization: Bearer ${ADMIN_TOKEN}")"
     if printf '%s' "$schemas_result" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if any(s["name"] == "information_schema" for s in d["data"]) else 1)'; then
         die "sample_postgres 配下に information_schema が残っている．schemaFilterPattern の設定を確認すること．"
     fi
@@ -336,7 +313,7 @@ cmd_ingest() {
     local search_ok=0 search_result hit_count search_pretty
     for _ in 1 2 3 4 5; do
         search_result="$(curl -fsS "${OM_BASE_URL}/api/v1/search/query?q=customers&index=table_search_index" \
-            -H "Authorization: Bearer ${admin_token}")"
+            -H "Authorization: Bearer ${ADMIN_TOKEN}")"
         hit_count="$(printf '%s' "$search_result" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hits",{}).get("total",{}).get("value",0))')"
         if [ "$hit_count" -gt 0 ]; then
             search_ok=1
@@ -361,7 +338,7 @@ cmd_ingest() {
     local view_fqn="sample_postgres.sampledb.public.customer_order_summary"
     local lineage_result upstream_count
     lineage_result="$(curl -fsS "${OM_BASE_URL}/api/v1/lineage/table/name/${view_fqn}?upstreamDepth=2&downstreamDepth=1" \
-        -H "Authorization: Bearer ${admin_token}")"
+        -H "Authorization: Bearer ${ADMIN_TOKEN}")"
 
     echo "=== リネージ API: ${view_fqn} ==="
     printf '%s\n' "$lineage_result" | python3 -m json.tool
@@ -373,7 +350,107 @@ cmd_ingest() {
     fi
     log_info "customer_order_summary の上流に期待どおり ${upstream_count} 件のエッジを確認した．"
 
-    log_info "インジェストと検証が完了した．"
+    log_info "サンプル DB のインジェストと検証が完了した．"
+}
+
+
+# サンプル S3 (../sample-s3) を Storage サービスとしてインジェストし，結果を API で検証する．
+# どのパスを 1 つの Container にするかはバケット直下の openmetadata.json（マニフェスト）が決める．
+ingest_sample_s3() {
+    log_info "[sample-s3] Storage メタデータインジェストを実行する（openmetadata.json に従って Container を作る）．"
+    run_ingestion s3_storage.yaml || die "S3 のインジェストに失敗した．"
+
+    # 期待値: バケットの Container 1 件と，マニフェストの各層から 1 件ずつ
+    # （bronze/orders，silver/orders，gold/daily_sales）．3 件ともパーティション付きで，
+    # 自動検出した dt（DATE 型）が先頭の列になる．
+    log_info "[sample-s3] 登録された Container を確認する．"
+    local result
+    result="$(curl -fsS "${OM_BASE_URL}/api/v1/containers?service=sample_s3&fields=dataModel&limit=100" \
+        -H "Authorization: Bearer ${ADMIN_TOKEN}")"
+    printf '%s' "$result" | python3 -c '
+import json, sys
+expected = ["bronze/orders", "silver/orders", "gold/daily_sales"]
+data = json.load(sys.stdin)["data"]
+by_name = {c["fullyQualifiedName"]: c for c in data}
+ng = []
+print("=== Container: sample_s3 ===")
+for c in sorted(data, key=lambda c: c["fullyQualifiedName"]):
+    dm = c.get("dataModel") or {}
+    fqn, part, ncols = c["fullyQualifiedName"], dm.get("isPartitioned"), len(dm.get("columns") or [])
+    print(f"  {fqn}  partitioned={part}  columns={ncols}")
+if "sample_s3.sample-lake" not in by_name:
+    ng.append("バケットの Container（sample_s3.sample-lake）が無い")
+for name in expected:
+    c = by_name.get(f"sample_s3.sample-lake.{name}")
+    if c is None:
+        ng.append(f"{name} が無い（openmetadata.json がアップロードされているか確認すること）")
+        continue
+    dm = c.get("dataModel") or {}
+    cols = dm.get("columns") or []
+    if not dm.get("isPartitioned"):
+        ng.append(f"{name} がパーティション付きになっていない")
+    if not cols or cols[0]["name"] != "dt" or cols[0]["dataType"] != "DATE":
+        ng.append(f"{name} の先頭列が dt (DATE) でない")
+if len(data) != len(expected) + 1:
+    ng.append(f"Container 数が期待値と一致しない（期待: {len(expected) + 1}，実測: {len(data)}）")
+for m in ng:
+    print(f"NG: {m}", file=sys.stderr)
+sys.exit(1 if ng else 0)
+' || die "S3 の取り込み結果が期待と一致しない．"
+    log_info "[sample-s3] バケットと 3 層の Container（dt パーティション付き）を確認した．"
+    log_info "サンプル S3 のインジェストと検証が完了した．"
+}
+
+# サンプル DB / サンプル S3 を OpenMetadata へインジェストし，結果を API で検証する．
+# 使い方: ./run.sh ingest [sample-db] [sample-s3]
+#   引数なし: 起動しているものをすべて取り込む（どちらも起動していなければエラー）
+#   引数あり: 指定したものだけ取り込む（起動していなければエラー）
+cmd_ingest() {
+    require_podman
+
+    local targets=() t
+    if [ "$#" -eq 0 ]; then
+        sample_db_ready && targets+=(sample-db) || log_warn "サンプル DB が起動していないので取り込まない（../sample-db/run.sh start）．"
+        sample_s3_ready && targets+=(sample-s3) || log_warn "サンプル S3 が起動していないので取り込まない（../sample-s3/run.sh start）．"
+        [ "${#targets[@]}" -gt 0 ] || die "取り込み対象が 1 つも起動していない．../sample-db/run.sh start か ../sample-s3/run.sh start を先に実行すること．"
+    else
+        for t in "$@"; do
+            case "$t" in
+                sample-db) sample_db_ready || die "サンプル DB に到達できない．先に ../sample-db/run.sh start を実行すること．" ;;
+                sample-s3) sample_s3_ready || die "サンプル S3 に到達できない．先に ../sample-s3/run.sh start を実行すること．" ;;
+                *) die "不明な取り込み対象: ${t}（${INGEST_TARGETS_ALL[*]} のいずれか）" ;;
+            esac
+            targets+=("$t")
+        done
+    fi
+    log_info "取り込み対象: ${targets[*]}"
+
+    # Linux ネイティブ向けの補正．SELinux enforcing なら bind mount を再ラベルし，
+    # host.containers.internal が未定義な環境では --add-host で補う．
+    # machine モード（macOS 等）ではどちらも空になる．
+    MOUNT_SUFFIX="$(selinux_mount_suffix)"
+    container_host_args
+
+    log_info "OpenMetadata サーバへの到達を確認する．"
+    if ! curl -fsS -o /dev/null "${OM_BASE_URL}/api/v1/system/version"; then
+        die "OpenMetadata サーバ (${OM_BASE_URL}) に到達できない．先に $0 start を実行すること．"
+    fi
+
+    # ビルドコンテキストはこのディレクトリ（Containerfile が configs/ を COPY する）
+    log_info "Containerfile.ingestion をビルドする．"
+    podman build -f "$SCRIPT_DIR/Containerfile.ingestion" -t "$INGESTION_IMAGE_TAG" "$SCRIPT_DIR"
+
+    om_login
+    TMP_DIR="$(mktemp -d)"
+    trap 'rm -rf "$TMP_DIR"' EXIT
+
+    for t in "${targets[@]}"; do
+        case "$t" in
+            sample-db) ingest_sample_db ;;
+            sample-s3) ingest_sample_s3 ;;
+        esac
+    done
+    log_info "インジェストと検証がすべて完了した（${targets[*]}）．"
 }
 
 cmd_fetch_compose() {
@@ -392,8 +469,8 @@ case "${1:-}" in
     status) cmd_status ;;
     logs) shift; cmd_logs "$@" ;;
     purge) cmd_purge ;;
-    ingest) cmd_ingest ;;
+    ingest) shift; cmd_ingest "$@" ;;
     fetch-compose) shift; cmd_fetch_compose "$@" ;;
     config) shift; env_print_config "$@" ;;
-    *) echo "使い方: $0 {start|stop|status|logs [service...]|purge|ingest|fetch-compose [--force]|config [--show-secrets]}" >&2; exit 1 ;;
+    *) echo "使い方: $0 {start|stop|status|logs [service...]|purge|ingest [sample-db] [sample-s3]|fetch-compose [--force]|config [--show-secrets]}" >&2; exit 1 ;;
 esac
